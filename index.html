@@ -1,74 +1,631 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cyberpunk Burning Man — Dragon & Panda</title>
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box}
-    body{overflow:hidden;background:#000;font-family:system-ui,sans-serif;color:#0ff}
-    #canvas-container{position:fixed;inset:0}
-    canvas{display:block;width:100%;height:100%}
-    #ui{position:fixed;inset:0;pointer-events:none;z-index:10;display:none;flex-direction:column;justify-content:space-between}
-    #hud{padding:12px 20px;display:flex;justify-content:space-between;align-items:flex-start;background:linear-gradient(to bottom,rgba(0,0,0,.7),transparent)}
-    .hud-box{background:rgba(0,20,40,.75);border:1px solid #0ff4;border-radius:8px;padding:8px 14px;backdrop-filter:blur(8px);box-shadow:0 0 20px #0ff3}
-    #title-screen{position:fixed;inset:0;background:radial-gradient(ellipse at center,#1a0033 0%,#000 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;pointer-events:auto;transition:opacity .8s}
-    #title-screen h1{font-size:clamp(1.8rem,5vw,3.5rem);text-align:center;background:linear-gradient(90deg,#f0f,#0ff,#f0f);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 40px #f0f8;margin-bottom:.4rem}
-    #title-screen .sub{color:#8af;font-size:1.1rem;margin-bottom:1.5rem;text-align:center}
-    .char-select{display:flex;gap:30px;margin:1.5rem 0;flex-wrap:wrap;justify-content:center}
-    .char-card{width:200px;cursor:pointer;text-align:center;transition:transform .3s,box-shadow .3s;background:rgba(0,30,60,.6);border:2px solid #0ff4;border-radius:14px;padding:12px;box-shadow:0 0 25px #0ff2}
-    .char-card:hover,.char-card.selected{transform:scale(1.06);border-color:#f0f;box-shadow:0 0 40px #f0f8}
-    .char-card img{width:100%;height:240px;object-fit:contain;border-radius:8px;background:#000a}
-    .char-card h3{margin-top:10px;color:#0ff;font-size:1.2rem}
-    .char-card p{color:#aaf;font-size:.85rem;margin-top:3px}
-    #start-btn{margin-top:1.2rem;padding:14px 40px;font-size:1.2rem;font-weight:bold;background:linear-gradient(90deg,#f0f,#0ff);color:#000;border:none;border-radius:50px;cursor:pointer;box-shadow:0 0 25px #f0f8;transition:transform .2s}
-    #start-btn:hover{transform:scale(1.05)}
-    #start-btn:disabled{opacity:.4;cursor:not-allowed}
-    #dialogue{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);max-width:650px;width:90%;background:rgba(0,10,30,.92);border:1px solid #0ff;border-radius:12px;padding:18px 24px;display:none;pointer-events:auto;box-shadow:0 0 35px #0ff4}
-    #dialogue h4{color:#f0f;margin-bottom:6px}
-    #dialogue p{color:#dff;line-height:1.45}
-    #dialogue .close{position:absolute;top:8px;right:14px;cursor:pointer;color:#0ff;font-size:1.3rem}
-    #instructions{position:absolute;bottom:16px;left:16px;font-size:.8rem;color:#8cf;background:rgba(0,0,0,.5);padding:6px 10px;border-radius:6px}
-    #toast{position:absolute;top:70px;left:50%;transform:translateX(-50%);background:rgba(0,40,80,.9);border:1px solid #0ff;padding:10px 20px;border-radius:8px;display:none}
-    #loading{position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:16px}
-    .loader{width:50px;height:50px;border:4px solid #0ff3;border-top-color:#f0f;border-radius:50%;animation:spin 1s linear infinite}
-    @keyframes spin{to{transform:rotate(360deg)}}
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cyberpunk Burning Man Ω HD — Dragon & Panda</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#000;font-family:system-ui,sans-serif;color:#0ff}
+#canvas-container{position:fixed;inset:0}canvas{display:block;width:100%;height:100%}
+#ui{position:fixed;inset:0;pointer-events:none;z-index:10;display:none;flex-direction:column;justify-content:space-between}
+#hud{padding:10px 14px;display:flex;justify-content:space-between;align-items:flex-start;background:linear-gradient(to bottom,rgba(0,0,0,.8),transparent);gap:6px;flex-wrap:wrap}
+.hud-box{background:rgba(0,15,35,.88);border:1px solid #0ff5;border-radius:10px;padding:8px 12px;backdrop-filter:blur(10px);box-shadow:0 0 18px #0ff4, inset 0 0 20px #0ff1;pointer-events:auto}
+#title-screen{position:fixed;inset:0;background:radial-gradient(ellipse at center,#120028 0%,#000 75%);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;pointer-events:auto;transition:opacity .9s;overflow-y:auto;padding:16px}
+#title-screen h1{font-size:clamp(1.6rem,4.5vw,3.2rem);text-align:center;background:linear-gradient(90deg,#f0f,#0ff,#f0f,#0ff);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 50px #f0fa;margin-bottom:.3rem;letter-spacing:1px}
+#title-screen .sub{color:#9cf;font-size:.95rem;margin-bottom:1rem;text-align:center;max-width:720px;line-height:1.4}
+.char-select{display:flex;gap:28px;margin:1rem 0;flex-wrap:wrap;justify-content:center}
+.char-card{width:200px;cursor:pointer;text-align:center;transition:transform .35s,box-shadow .35s;background:rgba(0,25,50,.7);border:2px solid #0ff5;border-radius:14px;padding:12px;box-shadow:0 0 30px #0ff3}
+.char-card:hover,.char-card.selected{transform:scale(1.07);border-color:#f0f;box-shadow:0 0 50px #f0f9}
+.char-card img{width:100%;height:260px;object-fit:contain;border-radius:10px;background:linear-gradient(180deg,#0a0520,#000)}
+.char-card h3{margin-top:10px;color:#0ff;font-size:1.15rem}
+.char-card p{color:#aaf;font-size:.8rem;margin-top:3px}
+#start-btn{margin-top:1rem;padding:14px 40px;font-size:1.15rem;font-weight:bold;background:linear-gradient(90deg,#f0f,#0ff);color:#000;border:none;border-radius:50px;cursor:pointer;box-shadow:0 0 35px #f0f9;transition:transform .2s}
+#start-btn:hover{transform:scale(1.05)}#start-btn:disabled{opacity:.4;cursor:not-allowed}
+#dialogue{position:absolute;bottom:22px;left:50%;transform:translateX(-50%);max-width:640px;width:92%;background:rgba(0,8,25,.96);border:1px solid #0ff;border-radius:14px;padding:16px 20px;display:none;pointer-events:auto;box-shadow:0 0 40px #0ff5;z-index:20}
+#dialogue h4{color:#f0f;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;font-size:1.05rem}
+#dialogue p{color:#e0f8ff;line-height:1.45;font-size:.93rem;white-space:pre-wrap}
+#dialogue .close{cursor:pointer;color:#0ff;font-size:1.3rem}
+#dialogue .quest-actions{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+#dialogue button{padding:7px 14px;background:linear-gradient(90deg,#0ff3,#f0f3);border:1px solid #0ff;color:#fff;border-radius:8px;cursor:pointer;font-size:.85rem}
+#dialogue button:hover{background:linear-gradient(90deg,#0ff6,#f0f6)}
+#instructions{position:absolute;bottom:10px;left:10px;font-size:.72rem;color:#8cf;background:rgba(0,0,0,.6);padding:5px 9px;border-radius:6px;max-width:340px}
+#toast{position:absolute;top:58px;left:50%;transform:translateX(-50%);background:rgba(0,30,60,.96);border:1px solid #0ff;padding:10px 18px;border-radius:10px;display:none;z-index:30;max-width:90%;text-align:center;font-size:.92rem;box-shadow:0 0 25px #0ff5}
+#loading{position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:14px}
+.loader{width:50px;height:50px;border:4px solid #0ff3;border-top-color:#f0f;border-radius:50%;animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#panel{position:absolute;top:68px;right:10px;width:280px;max-height:74vh;overflow-y:auto;background:rgba(0,12,30,.95);border:1px solid #0ff6;border-radius:12px;padding:12px;display:none;pointer-events:auto;z-index:25;box-shadow:0 0 30px #0ff4}
+#panel h3{color:#f0f;font-size:.95rem;margin-bottom:8px;border-bottom:1px solid #0ff4;padding-bottom:4px}
+#panel .item{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #0ff2;font-size:.84rem}
+#panel .item .qty{color:#0f8;font-weight:bold}
+#panel .tab{display:inline-block;padding:4px 9px;margin:2px;background:#0ff2;border-radius:5px;cursor:pointer;font-size:.76rem}
+#panel .tab.active{background:#0ff;color:#000}
+#panel .station-btn{display:block;width:100%;margin:4px 0;padding:8px;background:linear-gradient(90deg,#1a0044,#003355);border:1px solid #0ff5;color:#0ff;border-radius:8px;cursor:pointer;text-align:left;font-size:.82rem}
+#panel .station-btn:hover{background:linear-gradient(90deg,#330066,#005577)}
+#panel .station-btn small{display:block;color:#8af;font-size:.7rem;margin-top:2px}
+#tokens{color:#ff0;font-weight:bold;text-shadow:0 0 10px #ff0}
+#quest-list{font-size:.78rem;color:#adf}
+#quest-list .q{margin:4px 0;padding:5px;background:#0ff15;border-radius:5px}
+#quest-list .q.done{opacity:.4;text-decoration:line-through}
+.label{position:absolute;color:#0ff;font-size:11px;font-weight:600;text-shadow:0 0 6px #000,0 0 10px #0ff;pointer-events:none;white-space:nowrap;background:rgba(0,10,30,.7);padding:2px 6px;border-radius:4px;border:1px solid #0ff4}
+</style>
 </head>
 <body>
-  <div id="loading"><div class="loader"></div><div style="color:#0ff">Loading Cyberpunk Playa...</div></div>
-  <div id="title-screen">
-    <h1>CYBERPUNK BURNING MAN</h1>
-    <p class="sub">Black Rock City 2077 — Interactive 3D Festival<br>by Dragon & Panda</p>
-    <div class="char-select">
-      <div class="char-card" data-char="dragon" id="card-dragon">
-        <img src="assets/dragon.png" alt="Dragon">
-        <h3>🐉 DRAGON</h3>
-        <p>Neon scales • Cyber wings</p>
-      </div>
-      <div class="char-card" data-char="panda" id="card-panda">
-        <img src="assets/panda.png" alt="Panda">
-        <h3>🐼 PANDA</h3>
-        <p>Cyber fur • LED implants</p>
-      </div>
+<div id="loading"><div class="loader"></div><div style="color:#0ff">Loading HD Cyberpunk Playa Ω...</div><div style="color:#668;font-size:.8rem">Detailed sprites + economy</div></div>
+<div id="title-screen">
+  <h1>CYBERPUNK BURNING MAN Ω HD</h1>
+  <p class="sub">Black Rock City 2077 — High Detail Interactive Economy<br>
+  Detailed NPC sprites • Collectible items • Zero-Point Generators<br>
+  x402 tokens • Auction • Omega Suite<br>by Dragon & Panda</p>
+  <div class="char-select">
+    <div class="char-card" data-char="dragon" id="card-dragon">
+      <img src="assets/dragon.png" alt="Dragon" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div style="display:none;height:260px;align-items:center;justify-content:center;font-size:5rem;background:#0a0520;border-radius:10px">🐉</div>
+      <h3>🐉 DRAGON</h3>
+      <p>Neon scales • Cyber wings</p>
     </div>
-    <button id="start-btn" disabled>ENTER THE PLAYA</button>
-    <p style="margin-top:1.2rem;color:#668;font-size:.85rem">WASD move • Mouse look • E interact • 1/2 switch • Esc unlock</p>
-  </div>
-  <div id="ui">
-    <div id="hud">
-      <div class="hud-box"><div style="font-size:.75rem;color:#8af">AVATAR</div><div id="avatar-name" style="font-size:1rem;font-weight:bold">DRAGON</div><div id="status" style="font-size:.7rem;color:#6f6;margin-top:3px">Free roam</div></div>
-      <div class="hud-box" style="text-align:center"><div style="font-size:.7rem;color:#8af">BLACK ROCK CITY</div><div id="time-display" style="font-size:.95rem">NIGHT 01</div></div>
+    <div class="char-card" data-char="panda" id="card-panda">
+      <img src="assets/panda.png" alt="Panda" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div style="display:none;height:260px;align-items:center;justify-content:center;font-size:5rem;background:#0a0520;border-radius:10px">🐼</div>
+      <h3>🐼 PANDA</h3>
+      <p>Cyber fur • LED implants</p>
     </div>
-    <div id="instructions">WASD Move | Mouse Look | E Talk | 1/2 Switch | Click to lock</div>
-    <div id="dialogue"><span class="close" onclick="closeDialogue()">×</span><h4 id="dlg-name">NPC</h4><p id="dlg-text">...</p></div>
-    <div id="toast"></div>
   </div>
-  <div id="canvas-container"></div>
-  <script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
-  <script type="module">
-    // Compact full game - see previous for complete source. Core playable version live.
-    console.log("Cyberpunk Burning Man full deploy");
-  </script>
+  <button id="start-btn" disabled>ENTER THE PLAYA</button>
+  <p style="margin-top:1rem;color:#668;font-size:.78rem;text-align:center;max-width:500px">
+    WASD move • Mouse look • E interact / collect • I inventory • Tab Ω Panel • 1/2 avatar
+  </p>
+</div>
+<div id="ui">
+  <div id="hud">
+    <div class="hud-box"><div style="font-size:.68rem;color:#8af">AVATAR</div><div id="avatar-name" style="font-size:.95rem;font-weight:bold">DRAGON</div><div id="status" style="font-size:.62rem;color:#6f6;margin-top:2px">Free roam</div></div>
+    <div class="hud-box" style="text-align:center"><div style="font-size:.62rem;color:#8af">x402 TOKENS</div><div id="tokens" style="font-size:1.1rem">0</div></div>
+    <div class="hud-box" style="text-align:center"><div style="font-size:.62rem;color:#8af">BLACK ROCK CITY</div><div id="time-display" style="font-size:.9rem">NIGHT 01</div></div>
+    <div class="hud-box" style="cursor:pointer" onclick="togglePanel()"><div style="font-size:.68rem;color:#f0f">Ω PANEL</div><div style="font-size:.72rem">I / Tab</div></div>
+  </div>
+  <div id="instructions">WASD Move | Mouse Look | E Interact/Collect | I Inventory | Tab Ω Apps | 1/2 Switch | Click lock</div>
+  <div id="dialogue"><h4><span id="dlg-name">NPC</span><span class="close" onclick="closeDialogue()">×</span></h4><p id="dlg-text">...</p><div class="quest-actions" id="dlg-actions"></div></div>
+  <div id="toast"></div>
+  <div id="panel">
+    <div style="margin-bottom:7px">
+      <span class="tab active" data-tab="inv" onclick="switchTab('inv')">Inventory</span>
+      <span class="tab" data-tab="quests" onclick="switchTab('quests')">Quests</span>
+      <span class="tab" data-tab="omega" onclick="switchTab('omega')">Ω Apps</span>
+      <span class="tab" data-tab="auction" onclick="switchTab('auction')">Auction</span>
+    </div>
+    <div id="tab-inv"><h3>📦 Inventory</h3><div id="inv-list"></div></div>
+    <div id="tab-quests" style="display:none"><h3>📜 Active Quests</h3><div id="quest-list"></div></div>
+    <div id="tab-omega" style="display:none">
+      <h3>Ω Omega Suite</h3>
+      <button class="station-btn" onclick="useStation('zpeg')">⚡ Zero-Point Energy Generator<small>Absorb ambient energy → power x402 servers → mint tokens</small></button>
+      <button class="station-btn" onclick="useStation('x402')">💰 x402 Micro-Pay Node<small>Run paid endpoints & microtx</small></button>
+      <button class="station-btn" onclick="useStation('escrow')">📜 DragonEscrow / FairForge<small>AI Contract Escrow & deals</small></button>
+      <button class="station-btn" onclick="useStation('vonnect')">📡 Omega Vonnect Console<small>Daily actions log & monitoring</small></button>
+      <button class="station-btn" onclick="useStation('auction')">🏛️ Playa Auction House<small>List / bid with tokens</small></button>
+      <button class="station-btn" onclick="useStation('creator')">🧬 Creator of All Node<small>Spawn self-evolving agent tasks</small></button>
+    </div>
+    <div id="tab-auction" style="display:none"><h3>🏛️ Auction House</h3><div id="auction-list"></div>
+      <button class="station-btn" style="margin-top:7px" onclick="listRandomAuction()">List random item for auction</button></div>
+  </div>
+</div>
+<div id="canvas-container"></div>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+let scene,camera,renderer,controls,player,playerMesh,clock,loader;
+let selectedChar=null,velocity=new THREE.Vector3(),direction=new THREE.Vector3();
+let moveForward=false,moveBackward=false,moveLeft=false,moveRight=false,canJump=false,isLocked=false,dialogueOpen=false;
+let npcs=[],installations=[],theMan,dustParticles,collectibles=[],generators=[],itemLights=[];
+let tokens=0,inventory={},quests=[],panelOpen=false;
+let textures={};
+
+const ITEM_DEFS={
+  'neon-shard':{name:'Neon Shard',emoji:'💠',tex:'item_shard'},
+  'fiber-coil':{name:'Fiber Coil',emoji:'🌀'},
+  'dust-core':{name:'Dust Core',emoji:'🟤'},
+  'quantum-spark':{name:'Quantum Spark',emoji:'✨',tex:'item_spark'},
+  'circuit-board':{name:'Circuit Board',emoji:'📟'},
+  'plasma-vial':{name:'Plasma Vial',emoji:'🧪'},
+  'token-chip':{name:'Token Chip',emoji:'🪙'},
+  'zpeg-kit':{name:'ZPEG Kit',emoji:'⚡'},
+  'escrow-key':{name:'Escrow Key',emoji:'🔑'},
+  'vonnect-log':{name:'Vonnect Log',emoji:'📋'},
+  'auction-badge':{name:'Auction Badge',emoji:'🏛️'},
+  'creator-seed':{name:'Creator Seed',emoji:'🧬'}
+};
+
+// 12 NPCs mapped to detailed sprites
+const NPC_DATA=[
+  {name:'Neon Shaman',sprite:'npc_shaman',text:'The Man rises with circuits and soul. Bring me 3 Neon Shards and I teach the first Zero-Point rite.',quest:{id:'shards',need:{'neon-shard':3},reward:{tokens:25,items:{'quantum-spark':1}},done:false}},
+  {name:'Dust Runner',sprite:'npc_pilot',text:'Art cars need fuel. Collect 2 Dust Cores and 1 Plasma Vial — I pay in tokens.',quest:{id:'fuel',need:{'dust-core':2,'plasma-vial':1},reward:{tokens:40},done:false}},
+  {name:'Holo Scribe',sprite:'npc_scribe',text:'Leave no trace… except memories. I need a Vonnect Log and a Circuit Board for the Omega archive.',quest:{id:'archive',need:{'vonnect-log':1,'circuit-board':1},reward:{tokens:50,items:{'token-chip':2}},done:false}},
+  {name:'Chrome Fox',sprite:'npc_fox',text:'Dragon or Panda — both sacred. Find me an Escrow Key and I open a FairForge deal.',quest:{id:'escrow',need:{'escrow-key':1},reward:{tokens:60},done:false}},
+  {name:'Laser Monk',sprite:'npc_monk',text:'The Man is the collective dream. Bring a Creator Seed and I bless your self-evolving agents.',quest:{id:'seed',need:{'creator-seed':1},reward:{tokens:80,items:{'zpeg-kit':1}},done:false}},
+  {name:'x402 Broker',sprite:'npc_engineer',text:'I run micro-pay nodes. Bring 2 Token Chips + 1 Circuit Board and I spin up a paid endpoint.',quest:{id:'x402',need:{'token-chip':2,'circuit-board':1},reward:{tokens:100},done:false}},
+  {name:'Auctioneer Vex',sprite:'npc_auctioneer',text:'Everything has a price. Get an Auction Badge and you can list rare items for tokens.',quest:{id:'badge',need:{'auction-badge':1},reward:{tokens:30},done:false}},
+  {name:'ZPEG Engineer',sprite:'npc_engineer',text:'Zero-point energy is real. Craft/find a ZPEG Kit, place a generator near The Man, watch tokens flow.',quest:{id:'zpeg',need:{'zpeg-kit':1,'quantum-spark':1},reward:{tokens:75},done:false}},
+  {name:'Omega Watcher',sprite:'npc_scribe',text:'I monitor the Vonnect mesh. Deliver 3 Fiber Coils and I sync your daily actions to the ledger.',quest:{id:'fiber',need:{'fiber-coil':3},reward:{tokens:35,items:{'vonnect-log':1}},done:false}},
+  {name:'Temple Keeper',sprite:'npc_shaman',text:'The Temple holds secrets. Bring a Plasma Vial and a Neon Shard for the sacred circuit.',quest:{id:'temple',need:{'plasma-vial':1,'neon-shard':1},reward:{tokens:45},done:false}},
+  {name:'Art Car Pilot',sprite:'npc_pilot',text:'My mutant vehicle needs a Dust Core and Fiber Coil. Tokens await.',quest:{id:'car',need:{'dust-core':1,'fiber-coil':1},reward:{tokens:30},done:false}},
+  {name:'Symbiote',sprite:'npc_fox',text:'Human + AI. Bring a Creator Seed and Escrow Key — we write a symbiotic contract together.',quest:{id:'symbio',need:{'creator-seed':1,'escrow-key':1},reward:{tokens:120},done:false}}
+];
+
+let auctionListings=[
+  {item:'quantum-spark',price:40,seller:'System'},
+  {item:'zpeg-kit',price:90,seller:'ZPEG Engineer'},
+  {item:'creator-seed',price:70,seller:'Laser Monk'}
+];
+
+function loadTexture(path){
+  return new Promise((resolve)=>{
+    loader.load(path,(tex)=>{
+      tex.colorSpace=THREE.SRGBColorSpace;
+      tex.generateMipmaps=true;
+      tex.minFilter=THREE.LinearMipmapLinearFilter;
+      resolve(tex);
+    },undefined,()=>{
+      // fallback solid
+      const c=document.createElement('canvas');c.width=c.height=64;
+      const ctx=c.getContext('2d');ctx.fillStyle='#0ff';ctx.fillRect(0,0,64,64);
+      const t=new THREE.CanvasTexture(c);resolve(t);
+    });
+  });
+}
+
+async function init(){
+  loader=new THREE.TextureLoader();
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x040018);
+  scene.fog=new THREE.FogExp2(0x0a0028,0.0065);
+
+  camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.1,800);
+  camera.position.set(0,1.7,22);
+
+  renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+  renderer.setSize(innerWidth,innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.15;
+  document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+  // Lighting — richer
+  scene.add(new THREE.AmbientLight(0x1a1040,0.55));
+  const moon=new THREE.DirectionalLight(0x6688ff,0.7);
+  moon.position.set(-40,90,-20);scene.add(moon);
+  const fill=new THREE.DirectionalLight(0xff44aa,0.25);
+  fill.position.set(30,40,40);scene.add(fill);
+
+  const neonCols=[0xff00ff,0x00ffff,0xff6600,0x00ff88,0xff0088,0x88ff00,0xffaa00];
+  for(let i=0;i<14;i++){
+    const l=new THREE.PointLight(neonCols[i%7],2.8,42,1.8);
+    const a=(i/14)*Math.PI*2,r=20+Math.random()*45;
+    l.position.set(Math.cos(a)*r,2.2+Math.random()*6,Math.sin(a)*r);
+    scene.add(l);
+  }
+
+  // Ground with HD texture
+  const gTex=await loadTexture('assets/ground.jpg');
+  gTex.wrapS=gTex.wrapT=THREE.RepeatWrapping;gTex.repeat.set(28,28);
+  const ground=new THREE.Mesh(new THREE.PlaneGeometry(340,340),new THREE.MeshStandardMaterial({map:gTex,roughness:0.92,metalness:0.08,color:0xccbbaa}));
+  ground.rotation.x=-Math.PI/2;scene.add(ground);
+
+  // Stars
+  const sGeo=new THREE.BufferGeometry();const sPos=[];
+  for(let i=0;i<2200;i++){const r=280+Math.random()*180,th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);sPos.push(r*Math.sin(ph)*Math.cos(th),r*Math.cos(ph),r*Math.sin(ph)*Math.sin(th))}
+  sGeo.setAttribute('position',new THREE.Float32BufferAttribute(sPos,3));
+  scene.add(new THREE.Points(sGeo,new THREE.PointsMaterial({color:0xffffff,size:0.55,transparent:true,opacity:0.9})));
+
+  // Dust
+  const dGeo=new THREE.BufferGeometry();const dPos=[];
+  for(let i=0;i<1100;i++)dPos.push((Math.random()-0.5)*180,Math.random()*16,(Math.random()-0.5)*180);
+  dGeo.setAttribute('position',new THREE.Float32BufferAttribute(dPos,3));
+  dustParticles=new THREE.Points(dGeo,new THREE.PointsMaterial({color:0xb0d0ff,size:0.1,transparent:true,opacity:0.28,blending:THREE.AdditiveBlending,depthWrite:false}));
+  scene.add(dustParticles);
+
+  // THE MAN — more detailed structure
+  theMan=new THREE.Group();
+  theMan.add(new THREE.Mesh(new THREE.CylinderGeometry(6.8,9,3.5,10),new THREE.MeshStandardMaterial({color:0x0a0a18,metalness:0.9,roughness:0.25,emissive:0x220033,emissiveIntensity:0.3})));
+  const body=new THREE.Mesh(new THREE.BoxGeometry(2.8,12,2),new THREE.MeshStandardMaterial({color:0x00e8ff,metalness:0.95,roughness:0.15,emissive:0x004466,emissiveIntensity:0.65}));
+  body.position.y=9;theMan.add(body);
+  const head=new THREE.Mesh(new THREE.ConeGeometry(2.3,4.2,5),new THREE.MeshStandardMaterial({color:0xff00cc,metalness:0.8,roughness:0.2,emissive:0x550044,emissiveIntensity:0.9}));
+  head.position.y=17.2;head.rotation.y=Math.PI/5;theMan.add(head);
+  for(let side of[-1,1]){
+    const arm=new THREE.Mesh(new THREE.BoxGeometry(0.9,6,0.9),new THREE.MeshStandardMaterial({color:0x00ffaa,emissive:0x003322,emissiveIntensity:0.7,metalness:0.7}));
+    arm.position.set(side*2.8,11,0);arm.rotation.z=side*0.28;theMan.add(arm);
+  }
+  for(let i=0;i<5;i++){
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(5.5+i*1.6,0.11,8,64),new THREE.MeshBasicMaterial({color:neonCols[i],transparent:true,opacity:0.75,blending:THREE.AdditiveBlending}));
+    ring.position.y=4+i*3;ring.rotation.x=Math.PI/2;theMan.add(ring);
+  }
+  const mL=new THREE.PointLight(0xff00ff,9,60);mL.position.y=12;theMan.add(mL);
+  const mL2=new THREE.PointLight(0x00ffff,5,40);mL2.position.set(0,18,0);theMan.add(mL2);
+  theMan.position.set(0,1.6,0);scene.add(theMan);installations.push(theMan);
+
+  // Fiber forest — slightly thicker, more variety
+  for(let i=0;i<40;i++){
+    const h=2.8+Math.random()*6;
+    const f=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.08,h,6),new THREE.MeshBasicMaterial({color:neonCols[i%7],transparent:true,opacity:0.88,blending:THREE.AdditiveBlending}));
+    const a=Math.random()*Math.PI*2,r=15+Math.random()*58;
+    f.position.set(Math.cos(a)*r,h/2,Math.sin(a)*r);
+    scene.add(f);installations.push(f);
+  }
+
+  // Floating pyramids / art
+  for(let i=0;i<8;i++){
+    const py=new THREE.Mesh(new THREE.ConeGeometry(2.4+Math.random()*1.8,5+Math.random()*3.5,4),new THREE.MeshStandardMaterial({color:neonCols[i%7],transparent:true,opacity:0.5,emissive:neonCols[i%7],emissiveIntensity:0.4,metalness:0.85,wireframe:Math.random()>0.5}));
+    const a=(i/8)*Math.PI*2+0.25,r=34+Math.random()*30;
+    py.position.set(Math.cos(a)*r,3+Math.random()*2.5,Math.sin(a)*r);
+    py.userData={float:true,baseY:py.position.y,phase:Math.random()*Math.PI*2};
+    scene.add(py);installations.push(py);
+  }
+
+  // Art cars
+  for(let i=0;i<7;i++){
+    const car=new THREE.Group();
+    car.add(new THREE.Mesh(new THREE.BoxGeometry(3.8,1.1,2),new THREE.MeshStandardMaterial({color:0x1a1a2a,metalness:0.95,roughness:0.2,emissive:0x110022})));
+    const cab=new THREE.Mesh(new THREE.BoxGeometry(2,1,1.6),new THREE.MeshStandardMaterial({color:0x00bbff,transparent:true,opacity:0.65,emissive:0x004466,emissiveIntensity:0.5,metalness:0.8}));
+    cab.position.set(0,1.05,0);car.add(cab);
+    const hl=new THREE.PointLight(0xffaa00,3.2,16);hl.position.set(2.1,0.5,0.6);car.add(hl);
+    const a=Math.random()*Math.PI*2,r=50+Math.random()*38;
+    car.position.set(Math.cos(a)*r,0.6,Math.sin(a)*r);
+    car.userData={isCar:true,speed:0.011+Math.random()*0.03,radius:r,angle:a};
+    scene.add(car);installations.push(car);
+  }
+
+  // Temple
+  const temple=new THREE.Group();
+  temple.add(new THREE.Mesh(new THREE.BoxGeometry(12,0.9,12),new THREE.MeshStandardMaterial({color:0x0e0e1a,metalness:0.7,roughness:0.3})));
+  for(let i=0;i<4;i++){
+    const p=new THREE.Mesh(new THREE.BoxGeometry(0.9,10,0.9),new THREE.MeshStandardMaterial({color:0xff00aa,emissive:0x440033,emissiveIntensity:0.6,metalness:0.6}));
+    p.position.set((i%2?4:-4),5.2,(i<2?4:-4));temple.add(p);
+  }
+  const roof=new THREE.Mesh(new THREE.ConeGeometry(8,4.5,4),new THREE.MeshStandardMaterial({color:0x00ffff,transparent:true,opacity:0.4,emissive:0x003344,emissiveIntensity:0.5}));
+  roof.position.y=12;temple.add(roof);
+  temple.position.set(-60,0,-34);scene.add(temple);installations.push(temple);
+
+  // Omega station pads with glow
+  const stations=[{name:'ZPEG Field',pos:[14,0,10],color:0xffff00},{name:'x402 Node',pos:[-16,0,20],color:0x00ff88},{name:'Auction House',pos:[28,0,-22],color:0xff8800},{name:'Escrow Terminal',pos:[-32,0,-16],color:0xff00ff}];
+  stations.forEach(s=>{
+    const st=new THREE.Mesh(new THREE.CylinderGeometry(1.4,1.7,0.35,12),new THREE.MeshStandardMaterial({color:s.color,emissive:s.color,emissiveIntensity:0.7,metalness:0.8,roughness:0.2}));
+    st.position.set(s.pos[0],0.2,s.pos[2]);st.userData={isStation:true,stationName:s.name};
+    scene.add(st);installations.push(st);
+    const beacon=new THREE.PointLight(s.color,2,14);beacon.position.set(s.pos[0],2.2,s.pos[2]);scene.add(beacon);
+  });
+
+  // Preload key textures
+  const texList=['dragon','panda','npc_shaman','npc_pilot','npc_scribe','npc_auctioneer','npc_fox','npc_monk','npc_engineer','zpeg','item_shard','item_spark'];
+  for(const n of texList){
+    textures[n]=await loadTexture('assets/'+n+'.png');
+  }
+
+  // Player
+  player=new THREE.Group();player.position.set(0,0,20);scene.add(player);
+  createPlayerMesh('dragon');
+
+  controls=new PointerLockControls(camera,document.body);
+  scene.add(controls.getObject());
+  controls.getObject().position.set(0,1.7,20);
+
+  // NPCs with detailed sprites + name labels (as child sprites)
+  for(let i=0;i<NPC_DATA.length;i++){
+    const data=NPC_DATA[i];
+    const mat=new THREE.SpriteMaterial({map:textures[data.sprite]||textures.npc_shaman,transparent:true,alphaTest:0.15,depthWrite:false});
+    const spr=new THREE.Sprite(mat);
+    spr.scale.set(2.0,3.1,1);
+    const a=(i/NPC_DATA.length)*Math.PI*2+0.15,r=13+(i%5)*8+Math.random()*6;
+    spr.position.set(Math.cos(a)*r,1.55,Math.sin(a)*r);
+    spr.userData={...data,phase:Math.random()*Math.PI*2,isNPC:true};
+    scene.add(spr);npcs.push(spr);
+
+    // Small glow light under each NPC for differentiation
+    const nl=new THREE.PointLight(neonCols[i%7],0.9,6);
+    nl.position.copy(spr.position);nl.position.y=0.3;scene.add(nl);
+  }
+
+  // Collectibles — mix of detailed sprites and glowing orbs
+  const itemKeys=Object.keys(ITEM_DEFS);
+  for(let i=0;i<48;i++){
+    const key=itemKeys[Math.floor(Math.random()*itemKeys.length)];
+    const def=ITEM_DEFS[key];
+    let mesh;
+    if(def.tex && textures[def.tex]){
+      mesh=new THREE.Sprite(new THREE.SpriteMaterial({map:textures[def.tex],transparent:true,alphaTest:0.1,depthWrite:false,blending:THREE.AdditiveBlending}));
+      mesh.scale.set(0.9,0.9,1);
+    }else{
+      mesh=new THREE.Mesh(new THREE.OctahedronGeometry(0.38+Math.random()*0.2,0),new THREE.MeshStandardMaterial({color:neonCols[i%7],emissive:neonCols[i%7],emissiveIntensity:0.85,metalness:0.7,transparent:true,opacity:0.92}));
+    }
+    const a=Math.random()*Math.PI*2,r=9+Math.random()*72;
+    mesh.position.set(Math.cos(a)*r,0.7+Math.random()*1.3,Math.sin(a)*r);
+    mesh.userData={isCollectible:true,itemKey:key,phase:Math.random()*Math.PI*2};
+    scene.add(mesh);collectibles.push(mesh);
+    // Tiny light so items pop
+    if(i%2===0){
+      const il=new THREE.PointLight(neonCols[i%7],0.7,4);
+      il.position.copy(mesh.position);itemLights.push({light:il,target:mesh});scene.add(il);
+    }
+  }
+
+  inventory['neon-shard']=1;inventory['fiber-coil']=1;inventory['auction-badge']=1;
+  quests=NPC_DATA.map(n=>({...n.quest,name:n.name,status:'active'}));
+
+  document.addEventListener('keydown',onKeyDown);
+  document.addEventListener('keyup',onKeyUp);
+  window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+  document.getElementById('canvas-container').addEventListener('click',()=>{if(!dialogueOpen&&!panelOpen)controls.lock()});
+  controls.addEventListener('lock',()=>isLocked=true);
+  controls.addEventListener('unlock',()=>isLocked=false);
+
+  clock=new THREE.Clock();
+  document.getElementById('loading').style.display='none';
+  updateUI();
+  animate();
+}
+
+function createPlayerMesh(type){
+  if(playerMesh){player.remove(playerMesh);if(playerMesh.material.map)playerMesh.material.map.dispose();playerMesh.material.dispose()}
+  const tex=type==='dragon'?textures.dragon:textures.panda;
+  playerMesh=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:0.12,depthWrite:false}));
+  playerMesh.scale.set(2.2,3.3,1);playerMesh.position.y=1.65;player.add(playerMesh);
+  document.getElementById('avatar-name').textContent=type.toUpperCase();
+}
+
+function onKeyDown(e){
+  switch(e.code){
+    case 'KeyW':case 'ArrowUp':moveForward=true;break;
+    case 'KeyS':case 'ArrowDown':moveBackward=true;break;
+    case 'KeyA':case 'ArrowLeft':moveLeft=true;break;
+    case 'KeyD':case 'ArrowRight':moveRight=true;break;
+    case 'Space':if(canJump){velocity.y+=7.8;canJump=false}break;
+    case 'KeyE':interact();break;
+    case 'Digit1':createPlayerMesh('dragon');showToast('🐉 DRAGON');break;
+    case 'Digit2':createPlayerMesh('panda');showToast('🐼 PANDA');break;
+    case 'KeyI':case 'Tab':e.preventDefault();togglePanel();break;
+    case 'Escape':if(dialogueOpen)closeDialogue();else if(panelOpen)togglePanel();break;
+  }
+}
+function onKeyUp(e){
+  switch(e.code){
+    case 'KeyW':case 'ArrowUp':moveForward=false;break;
+    case 'KeyS':case 'ArrowDown':moveBackward=false;break;
+    case 'KeyA':case 'ArrowLeft':moveLeft=false;break;
+    case 'KeyD':case 'ArrowRight':moveRight=false;break;
+  }
+}
+
+function interact(){
+  const pos=player.position.clone();pos.y=1.5;
+  for(let i=collectibles.length-1;i>=0;i--){
+    const c=collectibles[i];
+    if(pos.distanceTo(c.position)<2.4){
+      const key=c.userData.itemKey;
+      inventory[key]=(inventory[key]||0)+1;
+      scene.remove(c);collectibles.splice(i,1);
+      showToast(`Collected ${ITEM_DEFS[key].emoji} ${ITEM_DEFS[key].name}`);
+      updateUI();return;
+    }
+  }
+  if(pos.distanceTo(theMan.position)<14){
+    openDialogue("The Man","You stand before the cybernetic Man of Black Rock City 2077. Tonight it burns — circuits, dreams, and all. Place a Zero-Point Generator near me and the Playa will feed your x402 servers with free energy. Radical self-expression + radical abundance.",[]);
+    return;
+  }
+  for(const g of generators){
+    if(pos.distanceTo(g.position)<3.2){
+      openDialogue("⚡ ZPEG",`This Zero-Point Energy Generator is humming. It has produced ${Math.floor(g.userData.produced||0)} tokens so far. Ambient energy → servers → x402 microtx → more tokens.`,[
+        {label:'Harvest tokens',action:()=>harvestGenerator(g)}
+      ]);
+      return;
+    }
+  }
+  for(const inst of installations){
+    if(inst.userData.isStation&&pos.distanceTo(inst.position)<3.8){
+      openDialogue(inst.userData.stationName,"Approach the Omega panel (I / Tab) to interact with this station fully.",[
+        {label:'Open Ω Panel',action:()=>{closeDialogue();togglePanel();switchTab('omega')}}
+      ]);
+      return;
+    }
+  }
+  let nearest=null,minD=5.8;
+  for(const n of npcs){const d=pos.distanceTo(n.position);if(d<minD){minD=d;nearest=n}}
+  if(nearest){
+    const q=nearest.userData.quest;
+    const actions=[];
+    if(q&&!q.done)actions.push({label:'Turn in quest',action:()=>tryCompleteQuest(nearest)});
+    actions.push({label:'Ask about tokens',action:()=>showToast(`${nearest.userData.name}: Tokens come from generators, quests, and the Auction House.`)});
+    const needStr=q&&!q.done?`\n\n[Quest] Need: ${Object.entries(q.need).map(([k,v])=>`${v}× ${ITEM_DEFS[k]?.name||k}`).join(', ')}`:'';
+    openDialogue(nearest.userData.name,nearest.userData.text+needStr,actions);
+    return;
+  }
+  showToast("Nothing nearby. Look for glowing items, detailed NPCs, stations, or The Man.");
+}
+
+function tryCompleteQuest(npc){
+  const q=npc.userData.quest;
+  if(!q||q.done){showToast("No active quest.");return}
+  for(const[k,v]of Object.entries(q.need)){if((inventory[k]||0)<v){showToast(`Missing ${ITEM_DEFS[k]?.name||k}`);return}}
+  for(const[k,v]of Object.entries(q.need))inventory[k]-=v;
+  tokens+=q.reward.tokens||0;
+  if(q.reward.items)for(const[k,v]of Object.entries(q.reward.items))inventory[k]=(inventory[k]||0)+v;
+  q.done=true;
+  const qq=quests.find(x=>x.id===q.id);if(qq)qq.status='done';
+  showToast(`✅ Quest complete! +${q.reward.tokens||0} tokens`);
+  closeDialogue();updateUI();
+}
+
+function harvestGenerator(g){
+  const produced=g.userData.produced||0;
+  if(produced<1){showToast("Still charging… walk around and come back.");return}
+  tokens+=Math.floor(produced);
+  g.userData.produced=0;
+  showToast(`⚡ Harvested ${Math.floor(produced)} tokens from ZPEG`);
+  closeDialogue();updateUI();
+}
+
+function openDialogue(name,text,actions=[]){
+  dialogueOpen=true;
+  document.getElementById('dlg-name').textContent=name;
+  document.getElementById('dlg-text').textContent=text;
+  const act=document.getElementById('dlg-actions');
+  act.innerHTML='';
+  actions.forEach(a=>{const b=document.createElement('button');b.textContent=a.label;b.onclick=a.action;act.appendChild(b)});
+  document.getElementById('dialogue').style.display='block';
+  controls.unlock();
+}
+window.closeDialogue=function(){dialogueOpen=false;document.getElementById('dialogue').style.display='none'};
+
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.display='block';
+  setTimeout(()=>t.style.display='none',2800);
+}
+
+window.togglePanel=function(){
+  panelOpen=!panelOpen;
+  document.getElementById('panel').style.display=panelOpen?'block':'none';
+  if(panelOpen){controls.unlock();updateUI()}
+};
+window.switchTab=function(tab){
+  ['inv','quests','omega','auction'].forEach(t=>{
+    document.getElementById('tab-'+t).style.display=t===tab?'block':'none';
+    document.querySelector(`.tab[data-tab="${t}"]`)?.classList.toggle('active',t===tab);
+  });
+  updateUI();
+};
+
+function updateUI(){
+  document.getElementById('tokens').textContent=tokens.toLocaleString();
+  const inv=document.getElementById('inv-list');
+  inv.innerHTML=Object.keys(inventory).filter(k=>inventory[k]>0).map(k=>{
+    const d=ITEM_DEFS[k]||{name:k,emoji:'❓'};
+    return `<div class="item"><span>${d.emoji} ${d.name}</span><span class="qty">×${inventory[k]}</span></div>`;
+  }).join('')||'<div style="color:#668">Empty — explore the Playa</div>';
+  const ql=document.getElementById('quest-list');
+  ql.innerHTML=quests.map(q=>{
+    const need=Object.entries(q.need||{}).map(([k,v])=>`${v} ${ITEM_DEFS[k]?.name||k}`).join(', ');
+    return `<div class="q ${q.status==='done'?'done':''}"><b>${q.name}</b><br>Need: ${need}<br>Reward: ${q.reward?.tokens||0} tokens</div>`;
+  }).join('');
+  const al=document.getElementById('auction-list');
+  al.innerHTML=auctionListings.map((a,i)=>{
+    const d=ITEM_DEFS[a.item]||{name:a.item,emoji:'❓'};
+    return `<div class="item"><span>${d.emoji} ${d.name}</span><span>${a.price}🪙 <button onclick="buyAuction(${i})" style="margin-left:4px;padding:2px 6px;font-size:.7rem;cursor:pointer">Buy</button></span></div>`;
+  }).join('')||'<div style="color:#668">No listings</div>';
+}
+
+window.buyAuction=function(i){
+  const a=auctionListings[i];
+  if(!a)return;
+  if(tokens<a.price){showToast("Not enough tokens");return}
+  tokens-=a.price;
+  inventory[a.item]=(inventory[a.item]||0)+1;
+  auctionListings.splice(i,1);
+  showToast(`Bought ${ITEM_DEFS[a.item]?.name} for ${a.price} tokens`);
+  updateUI();
+};
+window.listRandomAuction=function(){
+  const owned=Object.keys(inventory).filter(k=>inventory[k]>0&&k!=='token-chip');
+  if(!owned.length){showToast("No items to list");return}
+  const key=owned[Math.floor(Math.random()*owned.length)];
+  inventory[key]--;
+  const price=20+Math.floor(Math.random()*80);
+  auctionListings.push({item:key,price,seller:'You'});
+  showToast(`Listed ${ITEM_DEFS[key]?.name} for ${price} tokens`);
+  updateUI();
+};
+
+window.useStation=function(type){
+  if(type==='zpeg'){
+    if((inventory['zpeg-kit']||0)<1||(inventory['quantum-spark']||0)<1){showToast("Need ZPEG Kit + Quantum Spark to place a generator");return}
+    inventory['zpeg-kit']--;inventory['quantum-spark']--;
+    // Detailed ZPEG sprite
+    let g;
+    if(textures.zpeg){
+      g=new THREE.Sprite(new THREE.SpriteMaterial({map:textures.zpeg,transparent:true,alphaTest:0.1,depthWrite:false}));
+      g.scale.set(2.4,2.4,1);
+    }else{
+      g=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.4,2.2,8),new THREE.MeshStandardMaterial({color:0xffff00,emissive:0xffaa00,emissiveIntensity:0.85,metalness:0.7}));
+    }
+    g.position.set(player.position.x+2.5,1.2,player.position.z);
+    g.userData={isGenerator:true,produced:0,rate:0.2};
+    scene.add(g);generators.push(g);installations.push(g);
+    const gl=new THREE.PointLight(0xffff00,4,18);gl.position.copy(g.position);gl.position.y=2.8;scene.add(gl);
+    showToast("⚡ Zero-Point Generator placed! It absorbs ambient energy and mints tokens.");
+    updateUI();
+  }else if(type==='x402'){
+    if(tokens<10){showToast("Need at least 10 tokens to spin a micro-pay node");return}
+    tokens-=10;
+    const earned=15+Math.floor(Math.random()*25);
+    tokens+=earned;
+    showToast(`💰 x402 node ran a microtx batch → +${earned} tokens (net +${earned-10})`);
+    updateUI();
+  }else if(type==='escrow'){
+    if((inventory['escrow-key']||0)<1){showToast("Need an Escrow Key (quest from Chrome Fox)");return}
+    inventory['escrow-key']--;tokens+=45;inventory['token-chip']=(inventory['token-chip']||0)+1;
+    showToast("📜 FairForge escrow sealed. +45 tokens + Token Chip");updateUI();
+  }else if(type==='vonnect'){
+    if((inventory['vonnect-log']||0)<1){showToast("Need a Vonnect Log");return}
+    inventory['vonnect-log']--;tokens+=20;
+    showToast("📡 Omega Vonnect synced. +20 tokens");updateUI();
+  }else if(type==='auction'){switchTab('auction')}
+  else if(type==='creator'){
+    if((inventory['creator-seed']||0)<1){showToast("Need a Creator Seed");return}
+    inventory['creator-seed']--;tokens+=55;inventory['circuit-board']=(inventory['circuit-board']||0)+1;
+    showToast("🧬 Creator of All node spawned a mini-agent. +55 tokens + Circuit Board");updateUI();
+  }
+};
+
+function animate(){
+  requestAnimationFrame(animate);
+  const delta=Math.min(clock.getDelta(),0.05),time=clock.getElapsedTime();
+  if(isLocked&&!dialogueOpen&&!panelOpen){
+    velocity.x-=velocity.x*10*delta;velocity.z-=velocity.z*10*delta;velocity.y-=18.5*delta;
+    direction.z=Number(moveForward)-Number(moveBackward);direction.x=Number(moveRight)-Number(moveLeft);direction.normalize();
+    if(moveForward||moveBackward)velocity.z-=direction.z*46*delta;
+    if(moveLeft||moveRight)velocity.x-=direction.x*46*delta;
+    controls.moveRight(-velocity.x*delta);controls.moveForward(-velocity.z*delta);
+    controls.getObject().position.y+=velocity.y*delta;
+    if(controls.getObject().position.y<1.7){velocity.y=0;controls.getObject().position.y=1.7;canJump=true}
+    player.position.x=controls.getObject().position.x;player.position.z=controls.getObject().position.z;player.position.y=0;
+    if(playerMesh)playerMesh.visible=false;
+  }else if(playerMesh)playerMesh.visible=true;
+
+  installations.forEach(obj=>{
+    if(obj.userData.float){obj.position.y=obj.userData.baseY+Math.sin(time*1.25+obj.userData.phase)*0.7;obj.rotation.y+=0.008}
+    if(obj.userData.isCar){obj.userData.angle+=obj.userData.speed*delta;obj.position.x=Math.cos(obj.userData.angle)*obj.userData.radius;obj.position.z=Math.sin(obj.userData.angle)*obj.userData.radius;obj.rotation.y=obj.userData.angle+Math.PI/2}
+  });
+  npcs.forEach(n=>{n.position.y=1.55+Math.sin(time*1.9+n.userData.phase)*0.1});
+  collectibles.forEach(c=>{
+    c.position.y=0.75+Math.sin(time*2.4+c.userData.phase)*0.28;
+    if(c.rotation) {c.rotation.y+=0.025; if(c.rotation.x!==undefined)c.rotation.x+=0.012}
+  });
+  generators.forEach(g=>{g.userData.produced=(g.userData.produced||0)+g.userData.rate*delta;if(g.rotation)g.rotation.y+=0.015});
+  itemLights.forEach(({light,target})=>{if(target.parent)light.position.copy(target.position)});
+  if(dustParticles){const pos=dustParticles.geometry.attributes.position.array;for(let i=0;i<pos.length;i+=3){pos[i]+=Math.sin(time+i)*0.006;pos[i+2]+=Math.cos(time+i*0.35)*0.005;if(pos[i]>90)pos[i]=-90;if(pos[i+2]>90)pos[i+2]=-90}dustParticles.geometry.attributes.position.needsUpdate=true;dustParticles.rotation.y=time*0.01}
+  if(theMan)theMan.children.forEach((c,i)=>{if(c.geometry?.type==='TorusGeometry')c.rotation.z=time*(0.2+i*0.06)});
+  if(generators.length)document.getElementById('status').textContent=`ZPEGs: ${generators.length} | Free roam`;
+  renderer.render(scene,camera);
+}
+
+document.querySelectorAll('.char-card').forEach(card=>{
+  card.addEventListener('click',()=>{
+    document.querySelectorAll('.char-card').forEach(c=>c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedChar=card.dataset.char;
+    document.getElementById('start-btn').disabled=false;
+  });
+});
+document.getElementById('start-btn').addEventListener('click',()=>{
+  if(!selectedChar)return;
+  document.getElementById('title-screen').style.opacity='0';
+  setTimeout(()=>{
+    document.getElementById('title-screen').style.display='none';
+    document.getElementById('ui').style.display='flex';
+    createPlayerMesh(selectedChar);
+    showToast(`Welcome as ${selectedChar.toUpperCase()}! Collect detailed items, talk to unique NPCs, build ZPEGs.`);
+  },750);
+});
+
+init().catch(e=>{console.error(e);document.getElementById('loading').innerHTML='<div style="color:#f66">Failed to load. Check console.</div>'});
+</script>
 </body>
 </html>
