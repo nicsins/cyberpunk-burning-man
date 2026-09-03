@@ -59,13 +59,13 @@ body{overflow:hidden;background:#000;font-family:system-ui,sans-serif;color:#0ff
   x402 tokens • Auction • Omega Suite<br>by Dragon & Panda</p>
   <div class="char-select">
     <div class="char-card" data-char="dragon" id="card-dragon">
-      <img src="assets/dragon.png" alt="Dragon" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <img src="https://cdn.jsdelivr.net/gh/nicsins/cyberpunk-burning-man@main/assets/dragon.png" alt="Dragon" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
       <div style="display:none;height:260px;align-items:center;justify-content:center;font-size:5rem;background:#0a0520;border-radius:10px">🐉</div>
       <h3>🐉 DRAGON</h3>
       <p>Neon scales • Cyber wings</p>
     </div>
     <div class="char-card" data-char="panda" id="card-panda">
-      <img src="assets/panda.png" alt="Panda" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <img src="https://cdn.jsdelivr.net/gh/nicsins/cyberpunk-burning-man@main/assets/panda.png" alt="Panda" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
       <div style="display:none;height:260px;align-items:center;justify-content:center;font-size:5rem;background:#0a0520;border-radius:10px">🐼</div>
       <h3>🐼 PANDA</h3>
       <p>Cyber fur • LED implants</p>
@@ -206,7 +206,7 @@ async function init(){
   }
 
   // Ground with HD texture
-  const gTex=await loadTexture('assets/ground.jpg');
+  const gTex=await loadTexture('https://cdn.jsdelivr.net/gh/nicsins/cyberpunk-burning-man@main/assets/ground.jpg');
   gTex.wrapS=gTex.wrapT=THREE.RepeatWrapping;gTex.repeat.set(28,28);
   const ground=new THREE.Mesh(new THREE.PlaneGeometry(340,340),new THREE.MeshStandardMaterial({map:gTex,roughness:0.92,metalness:0.08,color:0xccbbaa}));
   ground.rotation.x=-Math.PI/2;scene.add(ground);
@@ -297,7 +297,7 @@ async function init(){
   // Preload key textures
   const texList=['dragon','panda','npc_shaman','npc_pilot','npc_scribe','npc_auctioneer','npc_fox','npc_monk','npc_engineer','zpeg','item_shard','item_spark'];
   for(const n of texList){
-    textures[n]=await loadTexture('assets/'+n+'.png');
+    textures[n]=await loadTexture('https://cdn.jsdelivr.net/gh/nicsins/cyberpunk-burning-man@main/assets/'+n+'.png');
   }
 
   // Player
