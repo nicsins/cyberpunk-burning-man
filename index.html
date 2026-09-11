@@ -125,7 +125,7 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 const CDN = 'https://cdn.jsdelivr.net/gh/nicsins/cyberpunk-burning-man@main/assets/';
 // Local fallback when served from same origin
 const LOCAL = 'assets/';
-const useLocal = location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.port;
+const useLocal = location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 
 let scene,camera,renderer,controls,player,playerMesh,clock,loader;
 let selectedChar=null,velocity=new THREE.Vector3(),direction=new THREE.Vector3();
@@ -183,7 +183,11 @@ let auctionListings=[
 
 function assetUrl(name){
   const base = useLocal ? LOCAL : CDN;
-  return base + name + (name.includes('.') ? '' : '.png');
+  if(name.includes('.')) return base + name;
+  // prefer known extensions
+  if(name==='ground') return base + 'ground.jpg';
+  if(name==='item_creator') return base + 'item_creator.png';
+  return base + name + '.png';
 }
 
 function loadTexture(path){
