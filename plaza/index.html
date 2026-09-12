@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dragon &amp; Panda — Neon Plaza</title>
+  <meta name="description" content="Walk the neon plaza. Ride the drone. Defend the effigy. Showcase creations for clients who want symbiotic systems." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="boot">
+    <div class="boot-card">
+      <p class="kicker">dragonandpanda.com</p>
+      <h1>NEON PLAZA</h1>
+      <p class="sub">Third-person void. Light shooter. Ride the sky. Guard the Man until it is time to burn.</p>
+      <div class="choose">
+        <button id="pick-panda" type="button">Play as PANDA</button>
+        <button id="pick-dragon" type="button">Play as DRAGON</button>
+      </div>
+      <div class="choose" style="margin-top:14px">
+        <button id="boot-controls" type="button">CONTROLS / XBOX</button>
+      </div>
+      <p class="hint">Mouse look after click-lock, or plug an Xbox pad. P opens the mapper — highlight an action, press the new input, Save.</p>
+    </div>
+  </div>
+
+  <canvas id="world"></canvas>
+
+  <div id="hud">
+    <div class="top">
+      <div class="brand">
+        <span class="logo">D&amp;P</span>
+        <div>
+          <strong>DRAGON &amp; PANDA</strong>
+          <small id="phase-label">PHASE · DEFEND THE EFFIGY</small>
+        </div>
+      </div>
+      <div class="meters">
+        <div class="meter"><span>HP</span><i id="hp-bar"></i></div>
+        <div class="meter"><span>AMMO</span><b id="ammo">0</b></div>
+        <div class="meter"><span>BOMBS</span><b id="bombs">0</b></div>
+        <div class="meter fire"><span>EFFIGY</span><i id="fire-bar"></i></div>
+        <div class="meter pad"><span>PAD</span><b id="pad-status">MOUSE</b></div>
+      </div>
+    </div>
+
+    <div id="prompt" class="hidden"></div>
+
+    <div class="bottom">
+      <div id="quest"></div>
+      <div id="inv"></div>
+      <div id="cross"></div>
+    </div>
+  </div>
+
+  <div id="talk" class="panel hidden">
+    <header>
+      <strong id="talk-name">NPC</strong>
+      <button type="button" data-close="talk">×</button>
+    </header>
+    <p id="talk-body"></p>
+    <div id="talk-opts"></div>
+  </div>
+
+  <div id="gallery" class="panel hidden wide">
+    <header>
+      <strong>CREATIONS GALLERY</strong>
+      <button type="button" data-close="gallery">×</button>
+    </header>
+    <div class="grid">
+      <article><h3>Agent Mesh</h3><p>Dragonscale local agents, hybrid ledger, bounded autonomy.</p></article>
+      <article><h3>Voice Benefits</h3><p>Veteran / citizen navigators that cut claim friction.</p></article>
+      <article><h3>CycleWorks</h3><p>Self-replicating 3D-printed cooperative villages.</p></article>
+      <article><h3>TIGERSTRYPE</h3><p>Cyber-noir recon brand + interactive ops cards.</p></article>
+      <article><h3>x402 Microtx</h3><p>Paid agent endpoints and shop rails on Base.</p></article>
+      <article><h3>Wingwoman</h3><p>Tradeswomen coaches for retention, safety, bids.</p></article>
+    </div>
+  </div>
+
+  <div id="vision" class="panel hidden">
+    <header>
+      <strong>VISION</strong>
+      <button type="button" data-close="vision">×</button>
+    </header>
+    <p>Build tools that treat people the way you want to be treated. Local-first agents. Cooperative infrastructure. Neon playgrounds that still close deals.</p>
+  </div>
+
+  <div id="contact" class="panel hidden">
+    <header>
+      <strong>CLIENT TERMINAL</strong>
+      <button type="button" data-close="contact">×</button>
+    </header>
+    <form id="contact-form">
+      <input name="name" placeholder="Name" required />
+      <input name="email" type="email" placeholder="Email" required />
+      <textarea name="msg" rows="4" placeholder="What should we build together?" required></textarea>
+      <button type="submit">SEND SIGNAL</button>
+      <p id="form-status"></p>
+    </form>
+  </div>
+
+  <div id="craft" class="panel hidden">
+    <header>
+      <strong>FIELD BENCH</strong>
+      <button type="button" data-close="craft">×</button>
+    </header>
+    <p>Spend scrap to print apps that hide you or hold the line.</p>
+    <div id="craft-list"></div>
+  </div>
+
+  <div id="help" class="panel hidden">
+    <header>
+      <strong>OPS BRIEF</strong>
+      <button type="button" data-close="help">×</button>
+    </header>
+    <ul class="keys">
+      <li><kbd>WASD</kbd> move · <kbd>Shift</kbd> sprint · <kbd>Space</kbd> jump / fly up</li>
+      <li><kbd>LMB</kbd> pulse gun · <kbd>G</kbd> throw boom · <kbd>E</kbd> talk / use</li>
+      <li><kbd>F</kbd> call / ride drone · <kbd>R</kbd> call / ride dragon</li>
+      <li><kbd>Q</kbd> cloak · <kbd>J</kbd> jammer · <kbd>C</kbd> bench · <kbd>X</kbd> douse</li>
+      <li><kbd>M</kbd> gallery · <kbd>V</kbd> vision · <kbd>H</kbd> this brief · <kbd>P</kbd> remap</li>
+      <li>Xbox: left stick move · right stick look · A use · RT shoot · B boom · LB/RB mounts</li>
+    </ul>
+    <p>Hostiles (max 10) gather kindling to light the effigy. Stop them until the plaza is ready. Then you light it.</p>
+  </div>
+
+  <div id="controls" class="panel hidden wide">
+    <header>
+      <strong>INPUT MAPPER</strong>
+      <button type="button" data-close="controls">×</button>
+    </header>
+    <p class="map-lead">Highlight an action, press or click the new control, check the box, then Save. Keyboard/mouse and Xbox each keep their own map.</p>
+    <div class="map-bar">
+      <label>Device
+        <select id="bind-scheme">
+          <option value="kb">Keyboard / Mouse</option>
+          <option value="pad">Xbox / Gamepad</option>
+        </select>
+      </label>
+      <span id="pad-live">No controller yet — press any pad button to wake it.</span>
+    </div>
+    <div id="bind-list" class="bind-list"></div>
+    <label class="cap-label">Captured input
+      <input id="bind-capture" type="text" readonly placeholder="press a key, mouse button, or pad button" />
+    </label>
+    <p id="bind-hint" class="hint">Click a row to listen.</p>
+    <div class="choose">
+      <button id="bind-save" type="button">SAVE BINDING</button>
+      <button id="bind-reset" type="button">RESET THIS DEVICE TO DEFAULT</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module" src="./world.js"></script>
+</body>
+</html>
