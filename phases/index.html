@@ -1,7 +1,14 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cyberpunk Burning Man Ω — Phases</title></head><body>
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Cyberpunk Burning Man Ω — Phases</title></head><body>
 <script type="module">
-const urls=['./index.part0a.html','./index.part0b.html','./index.part1.html'];
-const parts=await Promise.all(urls.map(u=>fetch(new URL(u,import.meta.url)).then(r=>r.text())));
-document.open();document.write(parts.join(''));document.close();
+async function load(){
+  const names=['index.payload.0.txt','index.payload.1.txt','index.payload.2.txt','index.payload.3.txt'];
+  const parts=await Promise.all(names.map(n=>fetch(new URL('./'+n,import.meta.url)).then(r=>r.text())));
+  const bin=Uint8Array.from(atob(parts.join('')),c=>c.charCodeAt(0));
+  const ds=new DecompressionStream('gzip');
+  const stream=new Blob([bin]).stream().pipeThrough(ds);
+  const html=await new Response(stream).text();
+  document.open();document.write(html);document.close();
+}
+load().catch(e=>{document.body.textContent='Shell inflate failed: '+e});
 </script>
 </body></html>
