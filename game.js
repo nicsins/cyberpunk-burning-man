@@ -4,6 +4,22 @@
  */
 const BASE = 'https://cdn.jsdelivr.net/gh/nicsins/cyberpunk-burning-man@7740e36d3b2eb4dcf7d52761e5248a7f35423ef4/game.js';
 
+// Ensure resume overlay exists even on older index.html shells
+(function ensureResumeUI(){
+  if(document.getElementById('resume-overlay')) return;
+  if(!document.getElementById('cbm-pl-style')){
+    const s=document.createElement('style');
+    s.id='cbm-pl-style';
+    s.textContent='body.pointer-locked,body.pointer-locked *{cursor:none!important}#resume-overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:80;background:rgba(0,0,0,.45);cursor:pointer}#resume-overlay .box{background:rgba(0,15,40,.94);border:1px solid #0ff;border-radius:16px;padding:22px 28px;text-align:center;box-shadow:0 0 40px #0ff6;max-width:90vw;color:#9cf;font-family:system-ui,sans-serif}#resume-overlay h2{color:#0ff;font-size:1.2rem;margin:0 0 8px;text-shadow:0 0 14px #0ff8}';
+    document.head.appendChild(s);
+  }
+  const ov=document.createElement('div');
+  ov.id='resume-overlay';
+  ov.style.display='none';
+  ov.innerHTML='<div class="box"><h2 id="resume-text">Click to resume</h2><p style="margin:0;font-size:.88rem">Pointer unlocked — click to capture mouse again<br><span style="color:#668;font-size:.75rem">Esc unlocks intentionally</span></p></div>';
+  document.body.appendChild(ov);
+})();
+
 let code = await (await fetch(BASE)).text();
 
 // --- #1 POINTER LOCK ---
@@ -96,7 +112,6 @@ code = code.replace(
   'const speed=isFlying?380:280;'
 );
 
-// Unlock for UI (dialogue open) — show resume when closed
 code = code.replace(
   'function openDialogue(name,text,actions=[]){\n  dialogueOpen=true;',
   'function openDialogue(name,text,actions=[]){\n  dialogueOpen=true;try{unlockForUI()}catch(e){}'
