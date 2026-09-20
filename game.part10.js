@@ -1,0 +1,1 @@
+init().catch(e=>{console.error(e);document.getElementById('loading').innerHTML='<div style="color:#f66;text-align:center;padding:2rem">Failed to load assets.<br><span style="color:#8af;font-size:.85rem">Check connection / console.</span></div>'});

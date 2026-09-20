@@ -1,5 +1,5 @@
 /** Thin loader — concatenates game.part*.js then imports as ES module */
-const PARTS = 5;
+const PARTS = 11;
 const base = new URL('./', import.meta.url);
 const texts = await Promise.all(
   Array.from({length: PARTS}, (_, i) =>
@@ -11,5 +11,4 @@ const texts = await Promise.all(
 );
 const code = texts.join('');
 const blob = new Blob([code], { type: 'text/javascript' });
-const url = URL.createObjectURL(blob);
-await import(url);
+await import(URL.createObjectURL(blob));
