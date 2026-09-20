@@ -1,1 +1,7 @@
-PLACEHOLDER_WILL_REPLACE
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cyberpunk Burning Man Ω — Phases</title></head><body>
+<script type="module">
+const urls=['./index.part0a.html','./index.part0b.html','./index.part1.html'];
+const parts=await Promise.all(urls.map(u=>fetch(new URL(u,import.meta.url)).then(r=>r.text())));
+document.open();document.write(parts.join(''));document.close();
+</script>
+</body></html>
