@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 
-const CDN = 'https://cdn.jsdelivr.net/gh/nicsins/cyberpunk-burning-man@main/assets/';
+const CDN = 'https://cdn.jsdelivr.net/gh/nicsins/cyberpunk-burning-man@fae0c84/assets/';
 // Local fallback when served from same origin
 const LOCAL = 'assets/';
 const useLocal = location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
