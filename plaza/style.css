@@ -25,13 +25,14 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
 }
 .sub { color: var(--dim); margin: 12px 0 28px; }
 .choose { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
-.choose button, .panel button, form button {
+.choose button, .choose a, .panel button, form button {
   font-family: Orbitron, sans-serif; cursor: pointer;
   border: 1px solid var(--cyan); background: transparent; color: var(--cyan);
   padding: 12px 18px; letter-spacing: .08em;
   box-shadow: 0 0 18px rgba(46,246,255,.25);
+  text-decoration: none; display: inline-block;
 }
-.choose button:hover, .panel button:hover, form button:hover {
+.choose button:hover, .choose a:hover, .panel button:hover, form button:hover {
   background: rgba(46,246,255,.12); color: #fff;
 }
 #pick-dragon { border-color: var(--pink); color: var(--pink); box-shadow: 0 0 18px rgba(255,46,166,.25); }
