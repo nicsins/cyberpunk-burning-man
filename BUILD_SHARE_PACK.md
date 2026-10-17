@@ -42,5 +42,5 @@ These are **109 Imagine assets** from the Cyberpunk Burning Man multi-phase game
 4. Tech plate / circuit ref you liked: @b6548860-3049-4d3b-a846-7f3cf707b67a
 
 ## Game-ready files (CDN)
-dragon_hd.png, panda.png, npc_shaman_hd.png, npc_fox_hd.png, npc_*, zpeg.png, rogue_drone.png, fire_patch.png, suppress_drone.png, frost_breath.png, ground.jpg, item_*
+dragon.png, panda.png, npc_shaman.png, npc_fox.png, npc_*, zpeg.png, rogue_drone.png, fire_patch.png, suppress_drone.png, frost_breath.png, ground.jpg, item_*
 

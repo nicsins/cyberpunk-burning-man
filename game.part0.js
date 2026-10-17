@@ -42,10 +42,10 @@ const ITEM_DEFS={
 };
 
 const NPC_DATA=[
-  {name:'Neon Shaman',sprite:'npc_shaman_hd',fallback:'npc_shaman',text:'The Man rises with circuits and soul. Bring me 3 Neon Shards and I teach the first Zero-Point rite.',quest:{id:'shards',need:{'neon-shard':3},reward:{tokens:25,items:{'quantum-spark':1}},done:false}},
+  {name:'Neon Shaman',sprite:'npc_shaman',text:'The Man rises with circuits and soul. Bring me 3 Neon Shards and I teach the first Zero-Point rite.',quest:{id:'shards',need:{'neon-shard':3},reward:{tokens:25,items:{'quantum-spark':1}},done:false}},
   {name:'Dust Runner',sprite:'npc_pilot',text:'Art cars need fuel. Collect 2 Dust Cores and 1 Plasma Vial — I pay in tokens.',quest:{id:'fuel',need:{'dust-core':2,'plasma-vial':1},reward:{tokens:40},done:false}},
   {name:'Holo Scribe',sprite:'npc_scribe',text:'Leave no trace… except memories. I need a Vonnect Log and a Circuit Board for the Omega archive.',quest:{id:'archive',need:{'vonnect-log':1,'circuit-board':1},reward:{tokens:50,items:{'token-chip':2}},done:false}},
-  {name:'Chrome Fox',sprite:'npc_fox_hd',fallback:'npc_fox',text:'Dragon or Panda — both sacred. Find me an Escrow Key and I open a FairForge deal.',quest:{id:'escrow',need:{'escrow-key':1},reward:{tokens:60},done:false}},
+  {name:'Chrome Fox',sprite:'npc_fox',text:'Dragon or Panda — both sacred. Find me an Escrow Key and I open a FairForge deal.',quest:{id:'escrow',need:{'escrow-key':1},reward:{tokens:60},done:false}},
   {name:'Laser Monk',sprite:'npc_monk',text:'The Man is the collective dream. Bring a Creator Seed and I bless your self-evolving agents.',quest:{id:'seed',need:{'creator-seed':1},reward:{tokens:80,items:{'zpeg-kit':1}},done:false}},
   {name:'x402 Broker',sprite:'npc_engineer',text:'I run micro-pay nodes. Bring 2 Token Chips + 1 Circuit Board and I spin up a paid endpoint.',quest:{id:'x402',need:{'token-chip':2,'circuit-board':1},reward:{tokens:100},done:false}},
   {name:'Auctioneer Vex',sprite:'npc_auctioneer',text:'Everything has a price. Get an Auction Badge and you can list rare items for tokens.',quest:{id:'badge',need:{'auction-badge':1},reward:{tokens:30},done:false}},
