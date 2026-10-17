@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
 import * as LOOK from './lookdev.js';
+import * as PHYS from './physics.js';   // small; Rapier itself is lazy-loaded after the title screen
 
 const CDN = 'https://cdn.jsdelivr.net/gh/nicsins/cyberpunk-burning-man@fae0c84/assets/';
 // Local fallback when served from same origin
@@ -21,6 +22,9 @@ let manIntegrity=100,appsDeployed=0,zpegsPlaced=0,questsDone=0;
 let frostCooldown=0,attackCooldown=0,droneWaveCleared=false;
 let phaseUnlocked={drone:false,defend:false,burn:false};
 let labels=[];
+// physics: fixed-step player (physics.js) + lazily attached Rapier world
+let P=null,physState={acc:0},physInput={f:0,b:0,l:0,r:0,jump:false,up:false,down:false,yaw:0},colliderSpecs=[],crateData=[],physLoading=null;
+const _eul=new THREE.Euler(0,0,0,'YXZ'),_fwd=new THREE.Vector3();
 // look-dev layer (lookdev.js)
 let composer,skyGroup,dustGroup,manGlow,carGlow,itemRings,lightPool,lightCandidates=[],staticGlow;
 
@@ -231,7 +235,7 @@ async function init(){
 
   // Set dressing: lamp posts, cables + string lights, scrap crates (instanced; ~6 draws)
   {const sd=LOOK.makeSetDressing([[0,0,14],[0,26,4],[-62,-36,9],[14,12,3],[-16,22,3],[30,-24,3],[-34,-18,3]]);
-   scene.add(sd.group);sd.glow.forEach(g=>staticGlow.add(...g));}
+   scene.add(sd.group);sd.glow.forEach(g=>staticGlow.add(...g));crateData=sd.crates||[];}
   carGlow=new LOOK.GlowLayer(16);scene.add(carGlow.mesh);
   itemRings=new LOOK.GlowLayer(64,{ring:true,y:0.04});scene.add(itemRings.mesh);
   lightPool=new LOOK.LightPool(scene,2);   // nearest 2 neon installations get the only other real lights
@@ -322,11 +326,34 @@ async function init(){
   controls.addEventListener('unlock',()=>isLocked=false);
 
   staticGlow.commit();
+  colliderSpecs=buildColliderSpecs();
+  P=PHYS.makePlayer({x:0,y:0,z:26});
+  window.__cbmPhys={get P(){return P},state:physState,input:physInput,PHYS,get ready(){return !!(P&&P.phys)},get specs(){return colliderSpecs},loadPhysics};
   composer=LOOK.makeComposer(renderer,scene,camera);
   clock=new THREE.Clock();
   document.getElementById('loading').style.display='none';
   updateUI();
   animate();
+}
+
+// Colliders for The Man's base, the Temple, NPCs, station pads and crates (plain data -> physics.js)
+function buildColliderSpecs(){
+  const out=[];
+  out.push({type:'cyl',tag:'man-plinth',x:theMan.position.x,y:0.85,z:theMan.position.z,r:12,h:1.7});
+  const temple=installations.find(o=>o.children&&o.children.length>=6&&Math.abs(o.position.x+62)<1);
+  if(temple){const tx=temple.position.x,tz=temple.position.z;
+    out.push({type:'box',tag:'temple-base',x:tx,y:0.45,z:tz,hx:6.5,hy:0.45,hz:6.5});
+    for(let i=0;i<4;i++)out.push({type:'box',tag:'temple-pillar',x:tx+(i%2?4.5:-4.5),y:5.5,z:tz+(i<2?4.5:-4.5),hx:0.45,hy:5.5,hz:0.45});}
+  installations.filter(o=>o.userData.isStation).forEach(st=>out.push({type:'cyl',tag:'station-pad',x:st.position.x,y:0.2,z:st.position.z,r:1.8,h:0.4}));
+  npcs.forEach(n=>out.push({type:'cap',tag:'npc',x:n.position.x,y:1.0,z:n.position.z,r:0.55,h:2.0}));
+  crateData.forEach(([x,y,z,r,sz])=>out.push({type:'box',tag:'crate',x,y,z,hx:sz/2,hy:sz/2,hz:sz/2,rotY:r}));
+  return out;
+}
+function loadPhysics(){
+  if(physLoading)return physLoading;
+  physLoading=PHYS.loadRapier().then(R=>{PHYS.attachPhysics(R,P,colliderSpecs);return true})
+    .catch(e=>{console.warn('Rapier unavailable, using flat-ground fallback',e);physLoading=null;return false});
+  return physLoading;
 }
 
 function createPlayerMesh(type){
@@ -347,9 +374,11 @@ function onKeyDown(e){
     case 'KeyA':case 'ArrowLeft':moveLeft=true;break;
     case 'KeyD':case 'ArrowRight':moveRight=true;break;
     case 'Space':
-      if(isFlying){velocity.y+=4}
-      else if(canJump){velocity.y+=7.8;canJump=false}
+      e.preventDefault();
+      if(isFlying)physInput.up=true;
+      else if(!e.repeat)physInput.jump=true;
       break;
+    case 'ShiftLeft':case 'ShiftRight':case 'KeyC':physInput.down=true;break;
     case 'KeyE':interact();break;
     case 'KeyF':toggleFlight();break;
     case 'KeyR':useSpecialAbility();break;
@@ -365,6 +394,8 @@ function onKeyUp(e){
     case 'KeyS':case 'ArrowDown':moveBackward=false;break;
     case 'KeyA':case 'ArrowLeft':moveLeft=false;break;
     case 'KeyD':case 'ArrowRight':moveRight=false;break;
+    case 'Space':physInput.up=false;break;
+    case 'ShiftLeft':case 'ShiftRight':case 'KeyC':physInput.down=false;break;
   }
 }
 function onMouseDown(e){
@@ -383,13 +414,14 @@ function toggleFlight(){
     checkPhaseUnlocks();
     return;
   }
-  isFlying=!isFlying;
-  if(isFlying){
-    showToast('🐉 Flight engaged — Space climb · WASD strafe · R frost');
+  if(P.landing)return;
+  if(!isFlying){
+    isFlying=P.flying=true;P.vel.y=Math.max(P.vel.y,6);
+    showToast('🐉 Flight engaged — Space climb · Shift/C descend · F land · R frost');
     flyHeight=Math.max(controls.getObject().position.y,4);
   }else{
-    showToast('Landed');
-    controls.getObject().position.y=1.7;
+    P.landing=true;   // glide down and touch down softly (was: teleport to the ground)
+    showToast('Landing…');
   }
 }
 
@@ -830,34 +862,31 @@ let arsonSpawnTimer=0,fireTick=0;
 
 function animate(){
   requestAnimationFrame(animate);
-  const delta=Math.min(clock.getDelta(),0.05),time=clock.getElapsedTime();
+  // B3: no more slow motion: clamp only huge hitches; the player runs on a fixed 60 Hz step
+  const delta=Math.min(clock.getDelta(),PHYS.MAX_FRAME),time=clock.getElapsedTime();
   if(frostCooldown>0)frostCooldown-=delta;
   if(attackCooldown>0)attackCooldown-=delta;
 
+  const cam=controls.getObject();
   if(isLocked&&!dialogueOpen&&!panelOpen){
-    velocity.x-=velocity.x*10*delta;velocity.z-=velocity.z*10*delta;
-    if(!isFlying)velocity.y-=18.5*delta;
-    else velocity.y-=velocity.y*3*delta;
-
-    direction.z=Number(moveForward)-Number(moveBackward);direction.x=Number(moveRight)-Number(moveLeft);direction.normalize();
-    const speed=isFlying?70:46;
-    if(moveForward||moveBackward)velocity.z-=direction.z*speed*delta;
-    if(moveLeft||moveRight)velocity.x-=direction.x*speed*delta;
-    controls.moveRight(-velocity.x*delta);controls.moveForward(-velocity.z*delta);
-
-    if(isFlying){
-      controls.getObject().position.y+=velocity.y*delta;
-      if(controls.getObject().position.y<2){controls.getObject().position.y=2;velocity.y=0}
-      if(controls.getObject().position.y>40){controls.getObject().position.y=40;velocity.y=0}
-    }else{
-      controls.getObject().position.y+=velocity.y*delta;
-      if(controls.getObject().position.y<1.7){velocity.y=0;controls.getObject().position.y=1.7;canJump=true}
-    }
-    player.position.x=controls.getObject().position.x;
-    player.position.z=controls.getObject().position.z;
-    player.position.y=isFlying?controls.getObject().position.y-1.5:0;
-    if(playerMesh)playerMesh.visible=!isLocked || isFlying;
-  }else if(playerMesh)playerMesh.visible=true;
+    _eul.setFromQuaternion(camera.quaternion);
+    physInput.f=moveForward;physInput.b=moveBackward;physInput.l=moveLeft;physInput.r=moveRight;physInput.yaw=_eul.y;
+    const {alpha}=PHYS.advance(physState,P,physInput,delta);
+    const ip=PHYS.lerp3(P.prev,P.pos,alpha);   // render interpolation
+    cam.position.set(ip.x,ip.y+PHYS.EYE,ip.z);
+  }else if(P){P.vel.x=P.vel.z=0;physInput.jump=false;physState.acc=0}   // B13: no stale velocity on resume
+  if(P){
+    if(isFlying&&!P.flying){showToast('Landed');}
+    isFlying=P.flying;canJump=P.grounded;velocity.set(P.vel.x,P.vel.y,P.vel.z);
+  }
+  // B5/B6: the hero sprite never pops into the camera. On foot it's first person (hidden, also when menus
+  // unlock the pointer); in flight it rides ahead of and below the view.
+  player.position.set(cam.position.x,0,cam.position.z);
+  if(playerMesh){
+    playerMesh.visible=isFlying;
+    if(isFlying){camera.getWorldDirection(_fwd);_fwd.y=0;_fwd.normalize();
+      player.position.set(cam.position.x+_fwd.x*4.5,cam.position.y-1.5-playerMesh.position.y+0.4,cam.position.z+_fwd.z*4.5);}
+  }
 
   installations.forEach(obj=>{
     if(obj.userData.float){obj.position.y=obj.userData.baseY+Math.sin(time*1.2+obj.userData.phase)*0.7;obj.rotation.y+=0.008}
@@ -959,6 +988,7 @@ document.getElementById('start-btn').addEventListener('click',()=>{
     document.getElementById('title-screen').style.display='none';
     document.getElementById('ui').style.display='flex';
     createPlayerMesh(selectedChar);
+    loadPhysics();   // lazy: Rapier wasm is fetched only after the title screen
     showToast(`Welcome as ${selectedChar.toUpperCase()}! Collect items, build ZPEGs, unlock flight & defend The Man.`);
   },750);
 });

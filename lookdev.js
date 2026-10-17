@@ -373,7 +373,7 @@ export function makeSetDressing(avoid=[]){
   const crateM=new THREE.InstancedMesh(new THREE.BoxGeometry(1,1,1),crateMat,crates.length);
   crates.forEach(([x,y,z,r,s],i)=>{q.setFromAxisAngle(up,r);m.compose(new THREE.Vector3(x,y,z),q,new THREE.Vector3(s,s,s));crateM.setMatrixAt(i,m);});
   crateM.castShadow=crateM.receiveShadow=true;grp.add(crateM);
-  return {group:grp,glow,lightSites};
+  return {group:grp,glow,lightSites,crates};   // crates: [x,y,z,rotY,size] (physics colliders)
 }
 
 // ---------------------------------------------------------------- pooled real lights (v2: ≤8 live)
