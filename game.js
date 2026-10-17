@@ -24,7 +24,11 @@ let phaseUnlocked={drone:false,defend:false,burn:false};
 let labels=[];
 // physics: fixed-step player (physics.js) + lazily attached Rapier world
 let P=null,physState={acc:0},physInput={f:0,b:0,l:0,r:0,jump:false,up:false,down:false,yaw:0},colliderSpecs=[],crateData=[],physLoading=null;
-const _eul=new THREE.Euler(0,0,0,'YXZ'),_fwd=new THREE.Vector3();
+const _eul=new THREE.Euler(0,0,0,'YXZ'),_fwd=new THREE.Vector3(),_right=new THREE.Vector3(),_pivot=new THREE.Vector3();
+// Camera rig: third-person chase cam by default (SCOPE-3D §2) so the hero is on screen; V toggles first person.
+// The hero sprite was never visible on foot: first person hid it, and before that it sat at the camera's own x/z (near-plane clipped).
+let camMode='third';
+const CAM={dist:8,height:3.4,side:1.4,minDist:1.6,clip:0.3};
 // look-dev layer (lookdev.js)
 let composer,skyGroup,dustGroup,manGlow,carGlow,itemRings,lightPool,lightCandidates=[],staticGlow;
 
@@ -328,7 +332,7 @@ async function init(){
   staticGlow.commit();
   colliderSpecs=buildColliderSpecs();
   P=PHYS.makePlayer({x:0,y:0,z:26});
-  window.__cbmPhys={get P(){return P},state:physState,input:physInput,PHYS,get ready(){return !!(P&&P.phys)},get specs(){return colliderSpecs},loadPhysics};
+  window.__cbmPhys={get P(){return P},get hero(){return playerMesh},get camMode(){return camMode},CAM,state:physState,input:physInput,PHYS,get ready(){return !!(P&&P.phys)},get specs(){return colliderSpecs},loadPhysics};
   composer=LOOK.makeComposer(renderer,scene,camera);
   clock=new THREE.Clock();
   document.getElementById('loading').style.display='none';
@@ -348,6 +352,25 @@ function buildColliderSpecs(){
   npcs.forEach(n=>out.push({type:'cap',tag:'npc',x:n.position.x,y:1.0,z:n.position.z,r:0.55,h:2.0}));
   crateData.forEach(([x,y,z,r,sz])=>out.push({type:'box',tag:'crate',x,y,z,hx:sz/2,hy:sz/2,hz:sz/2,rotY:r}));
   return out;
+}
+function heroEye(){return P?new THREE.Vector3(P.pos.x,P.pos.y+PHYS.EYE,P.pos.z):controls.getObject().position.clone()}
+// Chase camera: pivot above the hero's right shoulder, pulled in by a Rapier ray cast so it never sits inside a wall.
+function updateCameraRig(feet){
+  const cam=controls.getObject();
+  if(camMode==='first'||!playerMesh){
+    if(playerMesh)playerMesh.visible=false;
+    cam.position.set(feet.x,feet.y+PHYS.EYE,feet.z);return;
+  }
+  playerMesh.visible=true;
+  camera.getWorldDirection(_fwd);
+  _right.set(-_fwd.z,0,_fwd.x);if(_right.lengthSq()<1e-6)_right.set(1,0,0);_right.normalize();
+  _pivot.set(feet.x,feet.y+CAM.height,feet.z).addScaledVector(_right,CAM.side);
+  let d=CAM.dist;
+  const hit=PHYS.rayClip(P,_pivot,{x:-_fwd.x,y:-_fwd.y,z:-_fwd.z},CAM.dist);
+  if(hit!==null)d=Math.max(CAM.minDist,hit-CAM.clip);
+  cam.position.copy(_pivot).addScaledVector(_fwd,-d);
+  if(cam.position.y<feet.y+0.4)cam.position.y=feet.y+0.4;
+  if(cam.position.y<0.4)cam.position.y=0.4;
 }
 function loadPhysics(){
   if(physLoading)return physLoading;
@@ -381,6 +404,7 @@ function onKeyDown(e){
     case 'ShiftLeft':case 'ShiftRight':case 'KeyC':physInput.down=true;break;
     case 'KeyE':interact();break;
     case 'KeyF':toggleFlight();break;
+    case 'KeyV':camMode=camMode==='third'?'first':'third';showToast(camMode==='third'?'Third-person camera':'First-person camera');break;
     case 'KeyR':useSpecialAbility();break;
     case 'Digit1':createPlayerMesh('dragon');showToast('🐉 DRAGON — F to fly · R frost breath');break;
     case 'Digit2':createPlayerMesh('panda');showToast('🐼 PANDA — craft suppress drones · ride Dragon');break;
@@ -418,7 +442,7 @@ function toggleFlight(){
   if(!isFlying){
     isFlying=P.flying=true;P.vel.y=Math.max(P.vel.y,6);
     showToast('🐉 Flight engaged — Space climb · Shift/C descend · F land · R frost');
-    flyHeight=Math.max(controls.getObject().position.y,4);
+    flyHeight=Math.max(P.pos.y+PHYS.EYE,4);
   }else{
     P.landing=true;   // glide down and touch down softly (was: teleport to the ground)
     showToast('Landing…');
@@ -456,7 +480,7 @@ function spawnFrostBreath(){
   const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:textures.frost_breath,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,opacity:0.9}));
   spr.scale.set(6,3.5,1);
   const dir=new THREE.Vector3();camera.getWorldDirection(dir);
-  spr.position.copy(controls.getObject().position).add(dir.multiplyScalar(4));
+  spr.position.copy(heroEye()).add(dir.multiplyScalar(4));
   scene.add(spr);
   setTimeout(()=>scene.remove(spr),700);
 }
@@ -469,7 +493,7 @@ function attackNearest(){
 }
 
 function damageInFront(range,dmg){
-  const pos=controls.getObject().position.clone();
+  const pos=heroEye();
   const dir=new THREE.Vector3();camera.getWorldDirection(dir);
   for(let i=rogueDrones.length-1;i>=0;i--){
     const d=rogueDrones[i];
@@ -868,25 +892,20 @@ function animate(){
   if(attackCooldown>0)attackCooldown-=delta;
 
   const cam=controls.getObject();
+  let feet=P?P.pos:{x:cam.position.x,y:0,z:cam.position.z};
   if(isLocked&&!dialogueOpen&&!panelOpen){
     _eul.setFromQuaternion(camera.quaternion);
     physInput.f=moveForward;physInput.b=moveBackward;physInput.l=moveLeft;physInput.r=moveRight;physInput.yaw=_eul.y;
     const {alpha}=PHYS.advance(physState,P,physInput,delta);
-    const ip=PHYS.lerp3(P.prev,P.pos,alpha);   // render interpolation
-    cam.position.set(ip.x,ip.y+PHYS.EYE,ip.z);
+    feet=PHYS.lerp3(P.prev,P.pos,alpha);   // render interpolation
   }else if(P){P.vel.x=P.vel.z=0;physInput.jump=false;physState.acc=0}   // B13: no stale velocity on resume
   if(P){
     if(isFlying&&!P.flying){showToast('Landed');}
     isFlying=P.flying;canJump=P.grounded;velocity.set(P.vel.x,P.vel.y,P.vel.z);
   }
-  // B5/B6: the hero sprite never pops into the camera. On foot it's first person (hidden, also when menus
-  // unlock the pointer); in flight it rides ahead of and below the view.
-  player.position.set(cam.position.x,0,cam.position.z);
-  if(playerMesh){
-    playerMesh.visible=isFlying;
-    if(isFlying){camera.getWorldDirection(_fwd);_fwd.y=0;_fwd.normalize();
-      player.position.set(cam.position.x+_fwd.x*4.5,cam.position.y-1.5-playerMesh.position.y+0.4,cam.position.z+_fwd.z*4.5);}
-  }
+  // The hero stands on the physics feet (on foot and in flight); the camera rides behind it.
+  player.position.set(feet.x,feet.y,feet.z);
+  updateCameraRig(feet);
 
   installations.forEach(obj=>{
     if(obj.userData.float){obj.position.y=obj.userData.baseY+Math.sin(time*1.2+obj.userData.phase)*0.7;obj.rotation.y+=0.008}

@@ -3,7 +3,7 @@
 import {serve,launch} from './harness.mjs';
 const [,,gameDir='..',shots]=process.argv;
 const srv=await serve(gameDir); const {browser,page}=await launch(640,360);
-const errs=[],reqs=[]; page.on('pageerror',e=>errs.push(e.message)); page.on('console',m=>{if(m.type()==='error'&&!/favicon|404/.test(m.text()))errs.push(m.text())});
+const errs=[],reqs=[]; page.on('pageerror',e=>errs.push(e.message)); page.on('console',m=>{if(m.type()==='error')errs.push(m.text())});
 page.on('request',r=>reqs.push(r.url()));
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const results=[]; const ok=(name,pass,info)=>{results.push({name,pass:!!pass,info});console.log((pass?'PASS ':'FAIL ')+name+(info?'  '+JSON.stringify(info):''))};
@@ -62,16 +62,34 @@ ok('huge dt clamped (5 s hitch -> 30 steps max)',R.clamp.steps<=30,R.clamp);
 // --- in-game with real keyboard input under the virtual clock ---
 await page.mouse.click(320,180); await sleep(400);
 await page.evaluate(()=>__vt.enable());
+// the rAF that was queued before the virtual clock took over must fire first, or every step below is a no-op
+await page.waitForFunction(()=>__vt.step(0)>0,{polling:50,timeout:30000});
 const step=ms=>page.evaluate(ms=>__vt.step(ms),ms);
 for(let i=0;i<10;i++)await step(1000/30);
+// hero visibility after spawn: visible, texture decoded, inside the camera frustum, not near-plane clipped
+const H=await page.evaluate(()=>{const h=__cbmPhys.hero,c=__dbg.camera;c.updateMatrixWorld();h.updateMatrixWorld();
+  const V=h.position.constructor,wp=h.getWorldPosition(new V()),img=h.material.map&&h.material.map.image;
+  const r=new V().setFromMatrixColumn(c.matrixWorld,0),u=new V().setFromMatrixColumn(c.matrixWorld,1);
+  const sx=h.scale.x/2,sy=h.scale.y/2,pts=[[0,0],[-sx,-sy],[sx,-sy],[-sx,sy],[sx,sy]].map(([a,b])=>wp.clone().addScaledVector(r,a).addScaledVector(u,b).project(c));
+  const inside=p=>Math.abs(p.x)<=1&&Math.abs(p.y)<=1&&p.z>-1&&p.z<1;
+  const camSpaceZ=-wp.clone().applyMatrix4(c.matrixWorldInverse).z;
+  return {visible:h.visible,camMode:__cbmPhys.camMode,texReady:!!(img&&img.complete!==false&&img.width>0),centerNDC:[+pts[0].x.toFixed(3),+pts[0].y.toFixed(3)],
+    cornersInside:pts.slice(1).filter(inside).length,centerInside:inside(pts[0]),depth:+camSpaceZ.toFixed(2),near:c.near}});
+ok('hero sprite visible and inside the camera frustum after spawn (not near-clipped)',H.visible&&H.texReady&&H.centerInside&&H.cornersInside>=3&&H.depth>H.near+1,H);
+await page.keyboard.press('KeyV'); await step(1000/30);
+const fp=await page.evaluate(()=>({mode:__cbmPhys.camMode,visible:__cbmPhys.hero.visible}));
+await page.keyboard.press('KeyV'); await step(1000/30);
+ok('V toggles first person (hero hidden) and back',fp.mode==='first'&&!fp.visible&&await page.evaluate(()=>__cbmPhys.camMode==='third'&&__cbmPhys.hero.visible),fp);
 await page.evaluate(()=>{const {P}=__cbmPhys;P.pos={x:20,y:0,z:0};P.prev={...P.pos};P.phys.body.setTranslation({x:20,y:0.85,z:0},true);
   __dbg.camera.position.set(20,1.7,0);__dbg.camera.lookAt(0,1.7,0)});
 await page.keyboard.down('KeyW'); for(let i=0;i<150;i++)await step(1000/30); await page.keyboard.up('KeyW');
-const g=await page.evaluate(()=>{const c=__dbg.camera.position;return {x:+c.x.toFixed(2),y:+c.y.toFixed(2),z:+c.z.toFixed(2),locked:__dbg.isLocked}});
+const g=await page.evaluate(()=>{const p=__cbmPhys.P.pos,c=__dbg.camera.position;return {x:+p.x.toFixed(2),y:+p.y.toFixed(2),z:+p.z.toFixed(2),camR:+Math.hypot(c.x,c.z).toFixed(2),camY:+c.y.toFixed(2),locked:__dbg.isLocked}});
 if(shots)await page.screenshot({path:shots+'/test-blocked-at-plinth.png'});
-ok('in-game (real W key): stopped at The Man plinth edge (r=12)',Math.hypot(g.x,g.z)>11.5,g);
-await page.keyboard.press('Space'); let apex=0; for(let i=0;i<60;i++){await step(1000/60);apex=Math.max(apex,await page.evaluate(()=>__dbg.camera.position.y))}
-ok('in-game jump apex ≈1.6 m above eye',Math.abs(apex-1.7-1.63)<0.1,{apexAboveEye:+(apex-1.7).toFixed(3)});
+ok('in-game (real W key): walked from r=20 and stopped at The Man plinth edge (r=12)',Math.hypot(g.x,g.z)>11.5&&Math.hypot(g.x,g.z)<13,g);
+ok('chase camera not inside the plinth',g.camR>12||g.camY>1.7,g);
+const y0=await page.evaluate(()=>__cbmPhys.P.pos.y);
+await page.keyboard.press('Space'); let apex=0; for(let i=0;i<60;i++){await step(1000/60);apex=Math.max(apex,await page.evaluate(()=>__cbmPhys.P.pos.y))}
+ok('in-game jump apex ≈1.6 m (feet)',Math.abs(apex-y0-1.6)<0.1,{apex:+(apex-y0).toFixed(3)});
 ok('no page/console errors',errs.length===0,errs.slice(0,5));
 const fails=results.filter(r=>!r.pass).length; console.log(`\n${results.length-fails}/${results.length} passed`);
 await browser.close(); srv.close(); process.exit(fails?1:0);

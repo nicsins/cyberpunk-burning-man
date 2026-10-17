@@ -45,7 +45,7 @@ export function createWorld(R, specs, startFeet) {
   cc.setMinSlopeSlideAngle(35 * Math.PI / 180);
   cc.setApplyImpulsesToDynamicBodies(true);
   world.step();   // build the query pipeline
-  return {world, body, col, cc, colliders: specs.length + 5};
+  return {R, world, body, col, cc, colliders: specs.length + 5};
 }
 
 // Player state lives here (not on the camera) so rendering can interpolate between steps.
@@ -121,6 +121,16 @@ export function advance(state, P, input, frameDt) {
   return {alpha: state.acc / STEP, steps: n};
 }
 export const lerp3 = (a, b, t) => ({x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t});
+
+// Camera ray cast (chase-cam collision): distance to the first collider hit along dir (unit), ignoring the
+// player's own body and the ground, or null if nothing within max (or Rapier isn't loaded yet).
+export function rayClip(P, o, dir, max) {
+  if (!P || !P.phys) return null;
+  const {R, world, body} = P.phys;
+  const hit = world.castRay(new R.Ray({x: o.x, y: o.y, z: o.z}, dir), max, true, undefined, undefined, undefined, body,
+    c => c.__tag !== 'ground' && c.__tag !== 'bounds');
+  return hit ? hit.timeOfImpact : null;
+}
 
 // Attach Rapier to a running player (keeps position & velocity).
 export function attachPhysics(R, P, specs) {
