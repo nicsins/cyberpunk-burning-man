@@ -160,10 +160,10 @@ const ITEM_DEFS={
 };
 
 const NPC_DATA=[
-  {name:'Neon Shaman',sprite:'npc_shaman_hd',fallback:'npc_shaman',text:'The Man rises with circuits and soul. Bring me 3 Neon Shards and I teach the first Zero-Point rite.',quest:{id:'shards',need:{'neon-shard':3},reward:{tokens:25,items:{'quantum-spark':1}},done:false}},
+  {name:'Neon Shaman',sprite:'npc_shaman',text:'The Man rises with circuits and soul. Bring me 3 Neon Shards and I teach the first Zero-Point rite.',quest:{id:'shards',need:{'neon-shard':3},reward:{tokens:25,items:{'quantum-spark':1}},done:false}},
   {name:'Dust Runner',sprite:'npc_pilot',text:'Art cars need fuel. Collect 2 Dust Cores and 1 Plasma Vial — I pay in tokens.',quest:{id:'fuel',need:{'dust-core':2,'plasma-vial':1},reward:{tokens:40},done:false}},
   {name:'Holo Scribe',sprite:'npc_scribe',text:'Leave no trace… except memories. I need a Vonnect Log and a Circuit Board for the Omega archive.',quest:{id:'archive',need:{'vonnect-log':1,'circuit-board':1},reward:{tokens:50,items:{'token-chip':2}},done:false}},
-  {name:'Chrome Fox',sprite:'npc_fox_hd',fallback:'npc_fox',text:'Dragon or Panda — both sacred. Find me an Escrow Key and I open a FairForge deal.',quest:{id:'escrow',need:{'escrow-key':1},reward:{tokens:60},done:false}},
+  {name:'Chrome Fox',sprite:'npc_fox',text:'Dragon or Panda — both sacred. Find me an Escrow Key and I open a FairForge deal.',quest:{id:'escrow',need:{'escrow-key':1},reward:{tokens:60},done:false}},
   {name:'Laser Monk',sprite:'npc_monk',text:'The Man is the collective dream. Bring a Creator Seed and I bless your self-evolving agents.',quest:{id:'seed',need:{'creator-seed':1},reward:{tokens:80,items:{'zpeg-kit':1}},done:false}},
   {name:'x402 Broker',sprite:'npc_engineer',text:'I run micro-pay nodes. Bring 2 Token Chips + 1 Circuit Board and I spin up a paid endpoint.',quest:{id:'x402',need:{'token-chip':2,'circuit-board':1},reward:{tokens:100},done:false}},
   {name:'Auctioneer Vex',sprite:'npc_auctioneer',text:'Everything has a price. Get an Auction Badge and you can list rare items for tokens.',quest:{id:'badge',need:{'auction-badge':1},reward:{tokens:30},done:false}},
@@ -353,7 +353,7 @@ async function init(){
   });
 
   // Preload textures
-  const texList=['dragon','dragon_hd','panda','npc_shaman','npc_shaman_hd','npc_pilot','npc_scribe','npc_auctioneer','npc_fox','npc_fox_hd','npc_monk','npc_engineer','zpeg','item_shard','item_spark','item_creator','rogue_drone','fire_patch','suppress_drone','frost_breath'];
+  const texList=['dragon','panda','npc_shaman','npc_pilot','npc_scribe','npc_auctioneer','npc_fox','npc_monk','npc_engineer','zpeg','item_shard','item_spark','item_creator','rogue_drone','fire_patch','suppress_drone','frost_breath'];
   for(const n of texList){
     const path = n.includes('.') ? assetUrl(n) : assetUrl(n+'.png');
     textures[n]=await loadTexture(path.replace(/\.png\.png$/,'.png').replace(/\.jpg\.png$/,'.jpg'));
@@ -363,7 +363,7 @@ async function init(){
   try{textures.item_creator=await loadTexture(useLocal?LOCAL+'item_creator.png':CDN+'item_creator.png');}catch(e){}
 
   // Title images
-  document.getElementById('img-dragon').src = assetUrl('dragon_hd.png');
+  document.getElementById('img-dragon').src = assetUrl('dragon.png');
   document.getElementById('img-panda').src = assetUrl('panda.png');
 
   // Player
@@ -431,7 +431,7 @@ async function init(){
 function createPlayerMesh(type){
   if(playerMesh){player.remove(playerMesh);if(playerMesh.material.map)playerMesh.material.map.dispose();playerMesh.material.dispose()}
   selectedChar=type;
-  const tex=type==='dragon'?(textures.dragon_hd||textures.dragon):textures.panda;
+  const tex=type==='dragon'?textures.dragon:textures.panda;
   playerMesh=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:0.1,depthWrite:false}));
   playerMesh.scale.set(type==='dragon'?2.4:2.1,type==='dragon'?3.5:3.2,1);
   playerMesh.position.y=1.7;player.add(playerMesh);
