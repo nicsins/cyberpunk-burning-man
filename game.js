@@ -1,6 +1,7 @@
 
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+import * as LOOK from './lookdev.js';
 
 const CDN = 'https://cdn.jsdelivr.net/gh/nicsins/cyberpunk-burning-man@fae0c84/assets/';
 // Local fallback when served from same origin
@@ -20,6 +21,8 @@ let manIntegrity=100,appsDeployed=0,zpegsPlaced=0,questsDone=0;
 let frostCooldown=0,attackCooldown=0,droneWaveCleared=false;
 let phaseUnlocked={drone:false,defend:false,burn:false};
 let labels=[];
+// look-dev layer (lookdev.js)
+let composer,skyGroup,dustGroup,manGlow,carGlow,itemRings,lightPool,lightCandidates=[],staticGlow;
 
 const ITEM_DEFS={
   'neon-shard':{name:'Neon Shard',emoji:'💠',tex:'item_shard'},
@@ -88,8 +91,8 @@ function loadTexture(path){
 async function init(){
   loader=new THREE.TextureLoader();
   scene=new THREE.Scene();
-  scene.background=new THREE.Color(0x030012);
-  scene.fog=new THREE.FogExp2(0x08001c,0.0042);
+  scene.background=LOOK.HAZE.clone();
+  scene.fog=new THREE.FogExp2(LOOK.HAZE,0.006);   // v2 §1.3: fog = sky hue #0c1329 (+ the sky's horizon haze)
 
   camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,0.1,900);
   camera.position.set(0,1.7,28);
@@ -98,86 +101,79 @@ async function init(){
   renderer.setSize(innerWidth,innerHeight);
   renderer.setPixelRatio(Math.min(devicePixelRatio,2));
   renderer.toneMapping=THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure=1.35;
+  renderer.toneMappingExposure=1.15;                 // ACES is applied once, in OutputPass
   renderer.outputColorSpace=THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-  // Lighting
-  scene.add(new THREE.AmbientLight(0x2a1860,0.72));
-  const moon=new THREE.DirectionalLight(0x99aaff,0.95);
-  moon.position.set(-40,90,-20);scene.add(moon);
-  const fill=new THREE.DirectionalLight(0xff66cc,0.35);
-  fill.position.set(30,40,40);scene.add(fill);
-  const rim=new THREE.DirectionalLight(0x00ffff,0.25);
-  rim.position.set(0,20,60);scene.add(rim);
-  // soft hemisphere for playa bounce
-  scene.add(new THREE.HemisphereLight(0x6644aa,0x221100,0.45));
+  // Lighting (v2 §1.3): 1 moon (only shadow light) + hemisphere + env map. Neon = emissive + bloom.
+  scene.environment=LOOK.makeEnv(renderer);
+  const moon=new THREE.DirectionalLight(LOOK.PAL.coolHi,1.5);
+  moon.position.set(-70,55,-35);moon.castShadow=true;
+  moon.shadow.mapSize.set(2048,2048);Object.assign(moon.shadow.camera,{left:-90,right:90,top:90,bottom:-90,near:1,far:260});
+  moon.shadow.bias=-0.0004;moon.shadow.normalBias=0.04;scene.add(moon);
+  scene.add(new THREE.HemisphereLight(LOOK.PAL.fur,LOOK.PAL.playa,0.55));
+  staticGlow=new LOOK.GlowLayer(96);scene.add(staticGlow.mesh);   // fake light pools on the playa (1 draw)
 
-  const neonCols=[0xff00ff,0x00ffff,0xff6600,0x00ff88,0xff0088,0x88ff00,0xffaa00];
-  for(let i=0;i<16;i++){
-    const l=new THREE.PointLight(neonCols[i%7],2.6,45,1.8);
-    const a=(i/16)*Math.PI*2,r=18+Math.random()*50;
-    l.position.set(Math.cos(a)*r,2+Math.random()*7,Math.sin(a)*r);
-    scene.add(l);
+  // Palette-mapped neon (green / lime / hot pink removed per v2 §1.3)
+  const neonCols=[0xff00ff,0x00ffff,0xff6600,0x00ff88,0xff0088,0x88ff00,0xffaa00].map(LOOK.pal);
+  for(let i=0;i<16;i++){            // was 16 ambient PointLights → ground light pools
+    const a=(i/16)*Math.PI*2,r=18+Math.random()*50;Math.random();
+    staticGlow.add(Math.cos(a)*r,Math.sin(a)*r,7,neonCols[i%7],0.22);
   }
 
   // Ground
   const gTex=await loadTexture(assetUrl('ground.jpg'));
-  gTex.wrapS=gTex.wrapT=THREE.RepeatWrapping;gTex.repeat.set(22,22);gTex.anisotropy=8;
-  const ground=new THREE.Mesh(new THREE.PlaneGeometry(420,420),new THREE.MeshStandardMaterial({map:gTex,roughness:0.88,metalness:0.12,color:0xddd0c0,envMapIntensity:0.4}));
-  ground.rotation.x=-Math.PI/2;scene.add(ground);
+  const ground=LOOK.makeGround(gTex);scene.add(ground);      // + procedural crack normal/ORM, macro dust tint
+  scene.add(LOOK.makeTireTracks());                          // art-car loops + bike tracks (1 draw)
 
-  // Stars + simple aurora ribbons
-  const sGeo=new THREE.BufferGeometry();const sPos=[];
-  for(let i=0;i<4500;i++){const r=300+Math.random()*200,th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);sPos.push(r*Math.sin(ph)*Math.cos(th),r*Math.cos(ph),r*Math.sin(ph)*Math.sin(th))}
-  sGeo.setAttribute('position',new THREE.Float32BufferAttribute(sPos,3));
-  scene.add(new THREE.Points(sGeo,new THREE.PointsMaterial({color:0xffffff,size:0.5,transparent:true,opacity:0.9})));
+  // Sky: palette gradient + horizon haze + aurora bands + twinkling stars (replaces Points stars + 5 aurora planes)
+  skyGroup=LOOK.makeSky();scene.add(skyGroup);
+  for(let i=0;i<4500*3;i++)Math.random();   // keep the seeded layout identical to the old build
 
-  // Aurora-like planes
-  for(let i=0;i<5;i++){
-    const cols=[0x00ffaa,0xaa00ff,0x00aaff,0xff00aa,0x66ffcc];
-    const aMat=new THREE.MeshBasicMaterial({color:cols[i],transparent:true,opacity:0.1,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false});
-    const aMesh=new THREE.Mesh(new THREE.PlaneGeometry(220,50),aMat);
-    aMesh.position.set((i-2)*15,50+i*10,-90+i*18);aMesh.rotation.x=0.12;aMesh.rotation.z=i*0.08;
-    aMesh.userData={aurora:true,phase:i};scene.add(aMesh);installations.push(aMesh);
-  }
-
-  // Dust
-  const dGeo=new THREE.BufferGeometry();const dPos=[];
-  for(let i=0;i<2200;i++)dPos.push((Math.random()-0.5)*200,Math.random()*18,(Math.random()-0.5)*200);
-  dGeo.setAttribute('position',new THREE.Float32BufferAttribute(dPos,3));
-  dustParticles=new THREE.Points(dGeo,new THREE.PointsMaterial({color:0xc8e0ff,size:0.12,transparent:true,opacity:0.32,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true}));
-  scene.add(dustParticles);
+  // Dust + low haze (GPU-animated; replaces the CPU-updated Points)
+  dustGroup=LOOK.makeDust();scene.add(dustGroup);
+  for(let i=0;i<2200*3;i++)Math.random();
 
   // THE MAN — HD holographic sprite + neon rings + platform
   theMan=new THREE.Group();
-  theMan.add(new THREE.Mesh(new THREE.CylinderGeometry(10,12,1.6,24),new THREE.MeshStandardMaterial({color:0x0a0a18,metalness:0.95,roughness:0.15,emissive:0x330066,emissiveIntensity:0.55})));
-  // subtle energy core under the sprite
-  const core=new THREE.Mesh(new THREE.SphereGeometry(1.4,16,16),new THREE.MeshStandardMaterial({color:0xff00ff,emissive:0xff00aa,emissiveIntensity:2,transparent:true,opacity:0.85}));
+  // Plinth: Holo Steel (v2 §3) with grime/roughness variation + cyan emissive trims
+  const plinth=new THREE.Mesh(new THREE.CylinderGeometry(10,12,1.6,48),LOOK.pbr(LOOK.PAL.holoDark,{rough:0.5,metal:0.85,env:0.9}));
+  plinth.castShadow=plinth.receiveShadow=true;theMan.add(plinth);
+  for(const [r,y] of [[10.02,0.78],[11.0,-0.02],[12.03,-0.76]]){
+    const trim=new THREE.Mesh(new THREE.TorusGeometry(r,0.05,6,96),new THREE.MeshBasicMaterial({color:LOOK.neon(LOOK.PAL.cyan,3.2)}));
+    trim.rotation.x=Math.PI/2;trim.position.y=y;trim.userData.static=true;theMan.add(trim);
+  }
+  // energy core: ice-blue holo (was magenta)
+  const core=new THREE.Mesh(new THREE.SphereGeometry(1.4,24,16),new THREE.MeshBasicMaterial({color:LOOK.neon(LOOK.PAL.ice,1.5),transparent:true,opacity:0.8}));
   core.position.y=2.2;theMan.add(core);
-  for(let i=0;i<8;i++){
-    const ring=new THREE.Mesh(new THREE.TorusGeometry(7+i*1.6,0.1,8,72),new THREE.MeshBasicMaterial({color:neonCols[i%7],transparent:true,opacity:0.75,blending:THREE.AdditiveBlending}));
+  for(let i=0;i<8;i++){ // 8 rings alternate violet / cyan (v2 §4.1: same rings as the overseer halo)
+    const ring=new THREE.Mesh(new THREE.TorusGeometry(7+i*1.6,0.07,8,96),new THREE.MeshBasicMaterial({color:LOOK.neon(i%2?LOOK.PAL.violet:LOOK.PAL.cyan,2.8),transparent:true,opacity:0.85,blending:THREE.AdditiveBlending,depthWrite:false}));
     ring.position.y=2+i*3.2;ring.rotation.x=Math.PI/2;theMan.add(ring);
   }
+  manGlow=LOOK.makeManGlow();theMan.add(manGlow);             // light shaft + halo (emissive only)
+  staticGlow.add(0,0,22,LOOK.PAL.cyan,0.35);
   // HD Man billboard (loaded after textures — placeholder group child added later)
   theMan.userData.needsManSprite=true;
-  const mL=new THREE.PointLight(0xff00ff,16,100);mL.position.y=14;theMan.add(mL);
-  const mL2=new THREE.PointLight(0x00ffff,10,70);mL2.position.set(0,24,0);theMan.add(mL2);
-  const mL3=new THREE.PointLight(0xaa00ff,6,50);mL3.position.set(0,8,6);theMan.add(mL3);
+  const mL=new THREE.PointLight(LOOK.PAL.cyan,140,70,2);mL.position.set(0,7,4);theMan.add(mL);   // The Man's one real light
   theMan.position.set(0,0.9,0);scene.add(theMan);installations.push(theMan);
 
   // Fiber forest
-  for(let i=0;i<70;i++){
-    const h=2.5+Math.random()*7;
-    const f=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.07,h,6),new THREE.MeshBasicMaterial({color:neonCols[i%7],transparent:true,opacity:0.85,blending:THREE.AdditiveBlending}));
-    const a=Math.random()*Math.PI*2,r=16+Math.random()*65;
-    f.position.set(Math.cos(a)*r,h/2,Math.sin(a)*r);
-    scene.add(f);installations.push(f);
-  }
+  const fGeo=new THREE.CylinderGeometry(0.035,0.06,1,5,4).translate(0,0.5,0);
+  {const c=[],pa=fGeo.attributes.position;for(let k=0;k<pa.count;k++){const t=Math.pow(pa.getY(k),2.2);c.push(0.08+t*1.4,0.08+t*1.4,0.08+t*1.4)}fGeo.setAttribute('color',new THREE.Float32BufferAttribute(c,3))}
+  const fiber=new THREE.InstancedMesh(fGeo,new THREE.MeshBasicMaterial({vertexColors:true,color:new THREE.Color(2.4,2.4,2.4)}),70);
+  {const fm=new THREE.Matrix4();for(let i=0;i<70;i++){
+    const h=2.5+Math.random()*7;const a=Math.random()*Math.PI*2,r=16+Math.random()*65;
+    fm.makeScale(1,h,1).setPosition(Math.cos(a)*r,0,Math.sin(a)*r);fiber.setMatrixAt(i,fm);fiber.setColorAt(i,new THREE.Color(neonCols[i%7]));
+  }}
+  scene.add(fiber);
 
   // Floating pyramids / diamonds
   for(let i=0;i<16;i++){
-    const py=new THREE.Mesh(new THREE.OctahedronGeometry(2+Math.random()*2,0),new THREE.MeshStandardMaterial({color:neonCols[i%7],transparent:true,opacity:0.45,emissive:neonCols[i%7],emissiveIntensity:0.5,metalness:0.9,wireframe:Math.random()>0.4}));
+    const pyR=2+Math.random()*2,pyWire=Math.random()>0.4;
+    const py=new THREE.Mesh(new THREE.OctahedronGeometry(pyR,0),pyWire
+      ?new THREE.MeshBasicMaterial({color:LOOK.neon(neonCols[i%7],2.4),wireframe:true})                    // neon edges → bloom
+      :new THREE.MeshStandardMaterial({color:LOOK.PAL.glassDark,roughness:0.12,metalness:0.6,transparent:true,opacity:0.6,emissive:neonCols[i%7],emissiveIntensity:0.22,envMapIntensity:2.0,flatShading:true})); // neon glass
     const a=(i/10)*Math.PI*2+0.2,r=36+Math.random()*35;
     py.position.set(Math.cos(a)*r,4+Math.random()*3,Math.sin(a)*r);
     py.userData={float:true,baseY:py.position.y,phase:Math.random()*Math.PI*2};
@@ -187,7 +183,7 @@ async function init(){
   // Art cars — placeholder groups; sprites attached after texture load
   for(let i=0;i<10;i++){
     const car=new THREE.Group();
-    const hl=new THREE.PointLight(neonCols[i%7],4,22);hl.position.set(0,1.2,0);car.add(hl);
+    car.userData.glowColor=neonCols[i%7];   // was PointLight(4,22) → underglow pool + light-pool candidate
     const a=Math.random()*Math.PI*2,r=48+Math.random()*50;
     car.position.set(Math.cos(a)*r,1.4,Math.sin(a)*r);
     car.userData={isCar:true,speed:0.008+Math.random()*0.025,radius:r,angle:a,needsArtcar:true};
@@ -196,32 +192,49 @@ async function init(){
 
   // Temple
   const temple=new THREE.Group();
-  temple.add(new THREE.Mesh(new THREE.BoxGeometry(13,0.9,13),new THREE.MeshStandardMaterial({color:0x0e0e1a,metalness:0.85,roughness:0.2,emissive:0x220033,emissiveIntensity:0.3})));
-  const templeLight=new THREE.PointLight(0xff00aa,8,40);templeLight.position.set(0,6,0);temple.add(templeLight);
+  // Temple: Ω violet role. Dust-brick base, playa-wood pillars with violet seams, neon-glass roof.
+  const tBase=new THREE.Mesh(new THREE.BoxGeometry(13,0.9,13),LOOK.pbr(LOOK.PAL.playa,{rough:0.95,metal:0.0,env:0.3}));
+  tBase.castShadow=tBase.receiveShadow=true;temple.add(tBase);
+  const pillarMat=LOOK.pbr(LOOK.PAL.woodMid,{rough:0.85,metal:0.05,seam:LOOK.PAL.violet,seamK:3.2});
   for(let i=0;i<4;i++){
-    const p=new THREE.Mesh(new THREE.BoxGeometry(0.9,11,0.9),new THREE.MeshStandardMaterial({color:0xff00aa,emissive:0x440033,emissiveIntensity:0.6,metalness:0.6}));
+    const p=new THREE.Mesh(new THREE.BoxGeometry(0.9,11,0.9),pillarMat);p.castShadow=true;
     p.position.set((i%2?4.5:-4.5),5.5,(i<2?4.5:-4.5));temple.add(p);
   }
-  const roof=new THREE.Mesh(new THREE.ConeGeometry(9,5,4),new THREE.MeshStandardMaterial({color:0x00ffff,transparent:true,opacity:0.4,emissive:0x003344,emissiveIntensity:0.5}));
+  const roof=new THREE.Mesh(new THREE.ConeGeometry(9,5,4),new THREE.MeshStandardMaterial({color:LOOK.PAL.glassDark,transparent:true,opacity:0.75,roughness:0.15,metalness:0.5,emissive:LOOK.PAL.violet,emissiveIntensity:0.35,envMapIntensity:1.2,flatShading:true}));
   roof.position.y=13;temple.add(roof);
+  const roofEdge=new THREE.LineSegments(new THREE.EdgesGeometry(roof.geometry),new THREE.LineBasicMaterial({color:LOOK.neon(LOOK.PAL.violet,3)}));
+  roofEdge.position.y=13;temple.add(roofEdge);
+  staticGlow.add(-62,-36,12,LOOK.PAL.violet,0.4);
   temple.position.set(-62,0,-36);scene.add(temple);installations.push(temple);
 
   // Geodesic-ish domes
   for(let i=0;i<4;i++){
-    const dome=new THREE.Mesh(new THREE.SphereGeometry(5+i,12,8,0,Math.PI*2,0,Math.PI/2),new THREE.MeshStandardMaterial({color:0x8800ff,transparent:true,opacity:0.25,emissive:0x4400aa,emissiveIntensity:0.4,wireframe:true}));
+    const dome=new THREE.Mesh(new THREE.SphereGeometry(5+i,12,8,0,Math.PI*2,0,Math.PI/2),new THREE.MeshBasicMaterial({color:LOOK.neon(LOOK.PAL.violet,1.9),transparent:true,opacity:0.8,wireframe:true}));
     const a=i*1.6+0.5,r=45+i*12;
     dome.position.set(Math.cos(a)*r,0,Math.sin(a)*r);
+    staticGlow.add(dome.position.x,dome.position.z,6+i,LOOK.PAL.violet,0.18);
     scene.add(dome);installations.push(dome);
   }
 
   // Omega station pads
-  const stations=[{name:'ZPEG Field',pos:[14,0,12],color:0xffff00},{name:'x402 Node',pos:[-16,0,22],color:0x00ff88},{name:'Auction House',pos:[30,0,-24],color:0xff8800},{name:'Escrow Terminal',pos:[-34,0,-18],color:0xff00ff}];
+  const stations=[{name:'ZPEG Field',pos:[14,0,12],color:LOOK.PAL.gold},{name:'x402 Node',pos:[-16,0,22],color:LOOK.PAL.cyan},{name:'Auction House',pos:[30,0,-24],color:LOOK.PAL.gold},{name:'Escrow Terminal',pos:[-34,0,-18],color:LOOK.PAL.violet}];
   stations.forEach(s=>{
-    const st=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.8,0.35,12),new THREE.MeshStandardMaterial({color:s.color,emissive:s.color,emissiveIntensity:0.7,metalness:0.8,roughness:0.2}));
-    st.position.set(s.pos[0],0.2,s.pos[2]);st.userData={isStation:true,stationName:s.name};
+    // scrap-metal pad + emissive role-colour ring (was emissive slab + PointLight beacon)
+    const st=new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.8,0.35,24),LOOK.pbr(LOOK.PAL.scrapDark,{rough:0.6,metal:0.7}));
+    st.position.set(s.pos[0],0.2,s.pos[2]);st.userData={isStation:true,stationName:s.name};st.castShadow=st.receiveShadow=true;
+    const stRing=new THREE.Mesh(new THREE.TorusGeometry(1.45,0.045,6,48),new THREE.MeshBasicMaterial({color:LOOK.neon(s.color,3.4)}));
+    stRing.rotation.x=Math.PI/2;stRing.position.y=0.18;st.add(stRing);
     scene.add(st);installations.push(st);
-    const beacon=new THREE.PointLight(s.color,2.2,15);beacon.position.set(s.pos[0],2.3,s.pos[2]);scene.add(beacon);
+    staticGlow.add(s.pos[0],s.pos[2],5,s.color,0.5);
+    lightCandidates.push({pos:new THREE.Vector3(s.pos[0],2.3,s.pos[2]),color:s.color});
   });
+
+  // Set dressing: lamp posts, cables + string lights, scrap crates (instanced; ~6 draws)
+  {const sd=LOOK.makeSetDressing([[0,0,14],[0,26,4],[-62,-36,9],[14,12,3],[-16,22,3],[30,-24,3],[-34,-18,3]]);
+   scene.add(sd.group);sd.glow.forEach(g=>staticGlow.add(...g));}
+  carGlow=new LOOK.GlowLayer(16);scene.add(carGlow.mesh);
+  itemRings=new LOOK.GlowLayer(64,{ring:true,y:0.04});scene.add(itemRings.mesh);
+  lightPool=new LOOK.LightPool(scene,2);   // nearest 2 neon installations get the only other real lights
 
   // Preload textures
   const texList=['dragon','dragon_hd','panda','panda_hd','npc_shaman','npc_shaman_hd','npc_pilot','npc_scribe','npc_auctioneer','npc_fox','npc_fox_hd','npc_monk','npc_engineer','zpeg','item_shard','item_spark','item_creator','rogue_drone','fire_patch','suppress_drone','frost_breath','the_man','artcar'];
@@ -236,7 +249,7 @@ async function init(){
 
   // Attach HD The Man billboard
   if(textures.the_man && theMan){
-    const manSpr=new THREE.Sprite(new THREE.SpriteMaterial({map:textures.the_man,transparent:true,alphaTest:0.08,depthWrite:false}));
+    const manSpr=new THREE.Sprite(new THREE.SpriteMaterial({map:textures.the_man,transparent:true,alphaTest:0.08,depthWrite:false,color:new THREE.Color(1.35,1.35,1.35)}));manSpr.renderOrder=1; // holo highlights cross the bloom threshold
     manSpr.scale.set(18,28,1);
     manSpr.position.y=15;
     theMan.add(manSpr);
@@ -275,8 +288,7 @@ async function init(){
     spr.position.set(Math.cos(a)*r,2.1,Math.sin(a)*r);
     spr.userData={...data,phase:Math.random()*Math.PI*2,isNPC:true,friendly:true};
     scene.add(spr);npcs.push(spr);
-    const nl=new THREE.PointLight(neonCols[i%7],0.85,6);
-    nl.position.copy(spr.position);nl.position.y=0.3;scene.add(nl);
+    staticGlow.add(spr.position.x,spr.position.z,2.4,neonCols[i%7],0.45);   // was PointLight(0.85,6)
   }
 
   // Collectibles
@@ -289,16 +301,13 @@ async function init(){
       mesh=new THREE.Sprite(new THREE.SpriteMaterial({map:textures[def.tex],transparent:true,alphaTest:0.08,depthWrite:false,blending:THREE.AdditiveBlending}));
       mesh.scale.set(0.85,0.85,1);
     }else{
-      mesh=new THREE.Mesh(new THREE.OctahedronGeometry(0.35+Math.random()*0.18,0),new THREE.MeshStandardMaterial({color:neonCols[i%7],emissive:neonCols[i%7],emissiveIntensity:0.9,metalness:0.7,transparent:true,opacity:0.9}));
+      mesh=new THREE.Mesh(new THREE.OctahedronGeometry(0.35+Math.random()*0.18,0),new THREE.MeshStandardMaterial({color:LOOK.PAL.glassDark,emissive:neonCols[i%7],emissiveIntensity:1.7,metalness:0.6,roughness:0.2,flatShading:true}));
     }
     const a=Math.random()*Math.PI*2,r=10+Math.random()*78;
     mesh.position.set(Math.cos(a)*r,0.7+Math.random()*1.2,Math.sin(a)*r);
-    mesh.userData={isCollectible:true,itemKey:key,phase:Math.random()*Math.PI*2};
+    mesh.userData={isCollectible:true,itemKey:key,phase:Math.random()*Math.PI*2,ringColor:def.tex==='item_spark'||key==='zpeg-kit'||key==='token-chip'?LOOK.PAL.gold:neonCols[i%7]};
     scene.add(mesh);collectibles.push(mesh);
-    if(i%2===0){
-      const il=new THREE.PointLight(neonCols[i%7],0.65,4);
-      il.position.copy(mesh.position);itemLights.push({light:il,target:mesh});scene.add(il);
-    }
+    // was a PointLight on every 2nd item → accent ring under every item (v2 §3 pickup rule), drawn by itemRings
   }
 
   inventory['neon-shard']=1;inventory['fiber-coil']=1;inventory['auction-badge']=1;
@@ -307,11 +316,13 @@ async function init(){
   document.addEventListener('keydown',onKeyDown);
   document.addEventListener('keyup',onKeyUp);
   document.addEventListener('mousedown',onMouseDown);
-  window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+  window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer&&composer.resize(innerWidth,innerHeight)});
   document.getElementById('canvas-container').addEventListener('click',()=>{if(!dialogueOpen&&!panelOpen)controls.lock()});
   controls.addEventListener('lock',()=>isLocked=true);
   controls.addEventListener('unlock',()=>isLocked=false);
 
+  staticGlow.commit();
+  composer=LOOK.makeComposer(renderer,scene,camera);
   clock=new THREE.Clock();
   document.getElementById('loading').style.display='none';
   updateUI();
@@ -458,7 +469,7 @@ function damageInFront(range,dmg){
 function deploySuppressDrone(){
   if((inventory['suppress-kit']||0)>0)inventory['suppress-kit']--;
   const mat=new THREE.SpriteMaterial({map:textures.suppress_drone||null,transparent:true,alphaTest:0.1,depthWrite:false});
-  if(!textures.suppress_drone)mat.color=new THREE.Color(0x00aaff);
+  if(!textures.suppress_drone)mat.color=new THREE.Color(LOOK.PAL.cyan);
   const spr=new THREE.Sprite(mat);
   spr.scale.set(1.4,1.4,1);
   spr.position.copy(player.position);spr.position.y=3;
@@ -604,7 +615,7 @@ function showPhaseBanner(msg){
 function spawnRogueDrones(n){
   for(let i=0;i<n;i++){
     const mat=new THREE.SpriteMaterial({map:textures.rogue_drone||null,transparent:true,alphaTest:0.1,depthWrite:false});
-    if(!textures.rogue_drone)mat.color=new THREE.Color(0xff2200);
+    if(!textures.rogue_drone)mat.color=new THREE.Color(LOOK.PAL.hostile);
     const spr=new THREE.Sprite(mat);
     spr.scale.set(1.6,1.6,1);
     const a=Math.random()*Math.PI*2,r=25+Math.random()*40;
@@ -627,7 +638,7 @@ function spawnArsonists(n){
   for(let i=0;i<n;i++){
     // reuse engineer/fox as hostile look
     const tex=textures.npc_engineer||textures.npc_fox;
-    const mat=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:0.12,depthWrite:false,color:0xff6666});
+    const mat=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:0.12,depthWrite:false,color:0xff9a9a});   // hostile tint, softened so it reads as tint not glow
     const spr=new THREE.Sprite(mat);
     spr.scale.set(2,3,1);
     const a=Math.random()*Math.PI*2,r=40+Math.random()*30;
@@ -641,7 +652,7 @@ function spawnArsonists(n){
 function spawnFireNearMan(){
   if(fires.length>12)return;
   const mat=new THREE.SpriteMaterial({map:textures.fire_patch||null,transparent:true,alphaTest:0.05,depthWrite:false,blending:THREE.AdditiveBlending});
-  if(!textures.fire_patch)mat.color=new THREE.Color(0xff4400);
+  if(!textures.fire_patch)mat.color=new THREE.Color(LOOK.PAL.fireMid);
   const spr=new THREE.Sprite(mat);
   spr.scale.set(2.2,2.2,1);
   const a=Math.random()*Math.PI*2,r=4+Math.random()*10;
@@ -667,14 +678,14 @@ function startFinalBurn(){
   for(let i=0;i<20;i++){
     setTimeout(()=>{
       const mat=new THREE.SpriteMaterial({map:textures.fire_patch||null,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false});
-      if(!textures.fire_patch)mat.color=new THREE.Color(0xff6600);
+      if(!textures.fire_patch)mat.color=new THREE.Color(LOOK.PAL.fire);
       const spr=new THREE.Sprite(mat);
       spr.scale.set(3+Math.random()*4,3+Math.random()*4,1);
       spr.position.set((Math.random()-0.5)*8,2+Math.random()*18,(Math.random()-0.5)*6);
       theMan.add(spr);
     },i*120);
   }
-  const blaze=new THREE.PointLight(0xff6600,25,100);
+  const blaze=new THREE.PointLight(LOOK.PAL.fire,400,100,2);   // burn phase: 1 pooled fire light
   blaze.position.y=12;theMan.add(blaze);
   tokens+=500;
   showPhaseBanner('🔥 THE BURN — Radical self-expression. The Man burns. +500 tokens. Festival complete.');
@@ -763,12 +774,12 @@ window.useStation=function(type){
       g=new THREE.Sprite(new THREE.SpriteMaterial({map:textures.zpeg,transparent:true,alphaTest:0.1,depthWrite:false}));
       g.scale.set(2.4,2.4,1);
     }else{
-      g=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.4,2.2,8),new THREE.MeshStandardMaterial({color:0xffff00,emissive:0xffaa00,emissiveIntensity:0.85,metalness:0.7}));
+      g=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.4,2.2,8),new THREE.MeshStandardMaterial({color:0x3f3726,emissive:LOOK.PAL.gold,emissiveIntensity:1.6,metalness:0.8,roughness:0.35}));
     }
     g.position.set(player.position.x+2.5,1.2,player.position.z);
     g.userData={isGenerator:true,produced:0,rate:0.22};
     scene.add(g);generators.push(g);installations.push(g);zpegsPlaced++;
-    const gl=new THREE.PointLight(0xffff00,4,18);gl.position.copy(g.position);gl.position.y=2.8;scene.add(gl);
+    staticGlow.add(g.position.x,g.position.z,4,LOOK.PAL.gold,0.55);staticGlow.commit();   // was PointLight(4,18)
     showToast("⚡ Zero-Point Generator placed!");
     updateUI();checkPhaseUnlocks();
   }else if(type==='x402'){
@@ -851,7 +862,6 @@ function animate(){
   installations.forEach(obj=>{
     if(obj.userData.float){obj.position.y=obj.userData.baseY+Math.sin(time*1.2+obj.userData.phase)*0.7;obj.rotation.y+=0.008}
     if(obj.userData.isCar){obj.userData.angle+=obj.userData.speed*delta;obj.position.x=Math.cos(obj.userData.angle)*obj.userData.radius;obj.position.z=Math.sin(obj.userData.angle)*obj.userData.radius;obj.rotation.y=obj.userData.angle+Math.PI/2}
-    if(obj.userData.aurora){obj.material.opacity=0.06+Math.sin(time*0.4+obj.userData.phase)*0.04}
   });
   npcs.forEach(n=>{n.position.y=2.05+Math.sin(time*1.9+n.userData.phase)*0.12});
   collectibles.forEach(c=>{
@@ -859,7 +869,10 @@ function animate(){
     if(c.rotation){c.rotation.y+=0.025}
   });
   generators.forEach(g=>{g.userData.produced=(g.userData.produced||0)+g.userData.rate*delta;if(g.rotation)g.rotation.y+=0.015});
-  itemLights.forEach(({light,target})=>{if(target.parent)light.position.copy(target.position)});
+  // look-dev per-frame: item rings, car underglow, pooled lights
+  {let n=0;for(const c of collectibles){if(n>=64)break;itemRings.set(n++,c.position.x,c.position.z,0.55,c.userData.ringColor,1.4)}itemRings.commit(n);}
+  {let n=0;const cand=lightCandidates.slice();installations.forEach(o=>{if(o.userData.isCar){carGlow.set(n++,o.position.x,o.position.z,5,o.userData.glowColor,0.5);cand.push({pos:o.position,color:o.userData.glowColor})}});carGlow.commit(n);
+   lightPool.update(delta,camera,cand);}
 
   // Rogue drones orbit / chase
   rogueDrones.forEach(d=>{
@@ -924,11 +937,11 @@ function animate(){
 
   fires.forEach(f=>{f.position.y=0.5+Math.sin(time*5+f.userData.phase)*0.15;if(f.scale){const s=2+Math.sin(time*4)*0.2;f.scale.set(s,s,1)}});
 
-  if(dustParticles){const pos=dustParticles.geometry.attributes.position.array;for(let i=0;i<pos.length;i+=3){pos[i]+=Math.sin(time+i)*0.006;pos[i+2]+=Math.cos(time+i*0.35)*0.005;if(pos[i]>100)pos[i]=-100;if(pos[i+2]>100)pos[i+2]=-100}dustParticles.geometry.attributes.position.needsUpdate=true;dustParticles.rotation.y=time*0.01}
-  if(theMan)theMan.children.forEach((c,i)=>{if(c.geometry?.type==='TorusGeometry')c.rotation.z=time*(0.15+i*0.05)});
+  skyGroup.userData.update(time,camera);dustGroup.userData.update(time,camera);manGlow.userData.update(time);composer.update(time);
+  if(theMan)theMan.children.forEach((c,i)=>{if(c.geometry?.type==='TorusGeometry'&&!c.userData.static)c.rotation.z=time*(0.15+i*0.05)});
 
   if(generators.length)document.getElementById('status').textContent=`ZPEGs:${generators.length} | Phase:${gamePhase}`;
-  renderer.render(scene,camera);
+  composer.render(delta);
 }
 
 document.querySelectorAll('.char-card').forEach(card=>{
