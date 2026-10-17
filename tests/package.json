@@ -1,0 +1,1 @@
+{"name":"cbm-tests","private":true,"type":"module","scripts":{"test":"node physics.test.mjs .."},"devDependencies":{"puppeteer-core":"^23.0.0"}}
