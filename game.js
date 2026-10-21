@@ -21,6 +21,8 @@ let manIntegrity=100,appsDeployed=0,zpegsPlaced=0,questsDone=0;
 let frostCooldown=0,attackCooldown=0,droneWaveCleared=false;
 let phaseUnlocked={drone:false,defend:false,burn:false};
 let labels=[];
+const AMMO_MAX=12,AMMO_REGEN_SEC=8;
+let ammo=AMMO_MAX,ammoRegenTimer=0;
 const AUTO_PICKUP_RANGE=1.5,PICKUP_PULSE_RANGE=4;
 // look-dev layer (lookdev.js)
 let composer,skyGroup,dustGroup,manGlow,carGlow,itemRings,lightPool,lightCandidates=[],staticGlow;
@@ -432,7 +434,9 @@ function spawnFrostBreath(){
 
 function attackNearest(){
   if(attackCooldown>0)return;
+  if(ammo<=0){showToast(`Out of ammo — +1 round every ${AMMO_REGEN_SEC}s`);return}
   attackCooldown=0.45;
+  ammo--;ammoRegenTimer=0;updateAmmoHud();
   damageInFront(8,22);
   showToast('⚡ Attack!');
 }
@@ -743,7 +747,26 @@ window.switchTab=function(tab){
   updateUI();
 };
 
+function ensureHudBox(id,label,color){
+  let el=document.getElementById(id);
+  if(el)return el;
+  const box=document.createElement('div');box.className='hud-box';box.style.textAlign='center';
+  box.innerHTML=`<div style="font-size:.6rem;color:#8af">${label}</div><div id="${id}" style="font-size:1.1rem;color:${color}"></div>`;
+  document.getElementById('hud').appendChild(box);
+  return document.getElementById(id);
+}
+function updateAmmoHud(){
+  const el=ensureHudBox('ammo','AMMO','#ffaa00');
+  el.textContent=`${ammo} / ${AMMO_MAX}`;
+}
+function tickAmmoRegen(delta){
+  if(ammo>=AMMO_MAX){ammoRegenTimer=0;return}
+  ammoRegenTimer+=delta;
+  if(ammoRegenTimer>=AMMO_REGEN_SEC){ammoRegenTimer-=AMMO_REGEN_SEC;ammo=Math.min(AMMO_MAX,ammo+1);updateAmmoHud()}
+}
+
 function updateUI(){
+  updateAmmoHud();
   document.getElementById('tokens').textContent=tokens.toLocaleString();
   document.getElementById('man-fill').style.width=manIntegrity+'%';
   const inv=document.getElementById('inv-list');
@@ -852,6 +875,7 @@ function animate(){
   const delta=Math.min(clock.getDelta(),0.05),time=clock.getElapsedTime();
   if(frostCooldown>0)frostCooldown-=delta;
   if(attackCooldown>0)attackCooldown-=delta;
+  tickAmmoRegen(delta);
 
   if(isLocked&&!dialogueOpen&&!panelOpen){
     velocity.x-=velocity.x*10*delta;velocity.z-=velocity.z*10*delta;
