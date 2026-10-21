@@ -623,6 +623,37 @@ function checkPhaseUnlocks(){
   }
 }
 
+// Current phase goal: x402 Broker (collect), nearest rogue drone (drone), The Man (defend/burn).
+function currentObjective(){
+  if(gamePhase==='collect'){const b=npcs.find(n=>n.userData.name==='x402 Broker');return b?{pos:b.position,label:'x402 Broker'}:null}
+  if(gamePhase==='drone'){
+    let best=null,bd=Infinity;
+    for(const d of rogueDrones){const k=flatDist(player.position,d.position);if(k<bd){bd=k;best=d}}
+    return best?{pos:best.position,label:'Rogue drone'}:{pos:theMan.position,label:'The Man'};
+  }
+  if(gamePhase==='defend'||gamePhase==='burn')return {pos:theMan.position,label:'The Man'};
+  return null;
+}
+let objEl=null;
+const _objV=new THREE.Vector3();
+function updateObjectiveMarker(){
+  if(!objEl){
+    objEl=document.createElement('div');objEl.id='objective-marker';
+    objEl.style.cssText='position:fixed;top:72px;left:50%;transform:translateX(-50%);z-index:20;pointer-events:none;text-align:center;font-family:inherit;color:#0ff;text-shadow:0 0 8px #0ff';
+    objEl.innerHTML='<div id="obj-arrow" style="font-size:1.8rem;line-height:1;transition:transform .08s linear">▲</div><div id="obj-label" style="font-size:.7rem;letter-spacing:.06em"></div>';
+    document.body.appendChild(objEl);
+  }
+  const o=currentObjective();
+  const ui=document.getElementById('ui');
+  if(!o||!ui||ui.style.display==='none'){objEl.style.display='none';return}
+  objEl.style.display='block';
+  // target in camera space: x right, -z forward
+  _objV.copy(o.pos);_objV.y=camera.position.y;_objV.applyMatrix4(camera.matrixWorldInverse);
+  const ang=Math.atan2(_objV.x,-_objV.z);
+  document.getElementById('obj-arrow').style.transform=`rotate(${ang}rad)`;
+  document.getElementById('obj-label').textContent=`${o.label} · ${Math.round(flatDist(controls.getObject().position,o.pos))}m`;
+}
+
 function setPhase(p){
   gamePhase=p;
   document.getElementById('phase-display').textContent=p.toUpperCase();
@@ -985,6 +1016,7 @@ function animate(){
   if(theMan)theMan.children.forEach((c,i)=>{if(c.geometry?.type==='TorusGeometry'&&!c.userData.static)c.rotation.z=time*(0.15+i*0.05)});
 
   if(generators.length)document.getElementById('status').textContent=`ZPEGs:${generators.length} | Phase:${gamePhase}`;
+  updateObjectiveMarker();
   composer.render(delta);
 }
 
