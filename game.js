@@ -900,6 +900,22 @@ window.useStation=function(type){
 };
 
 let arsonSpawnTimer=0,fireTick=0;
+const WALK_FRAME_MS=300;
+// Two-frame walk cycle: swaps userData.frames[0/1] textures when a second frame exists,
+// otherwise a procedural step (tilt + squash/stretch) on the same 300ms beat.
+function animateWalkCycle(spr,time,isDrone){
+  const ud=spr.userData;
+  if(!ud.baseScale)ud.baseScale=spr.scale.clone();
+  const frame=Math.floor(time*1000/WALK_FRAME_MS+(ud.phase||0))%2;
+  if(ud.frames&&ud.frames[1]){
+    const tex=ud.frames[frame];if(spr.material.map!==tex){spr.material.map=tex;spr.material.needsUpdate=true}
+    return;
+  }
+  const tilt=isDrone?0.12:0.09;
+  spr.material.rotation=frame?tilt:-tilt;
+  const sy=frame?1.05:0.95,sx=frame?0.97:1.03;
+  spr.scale.set(ud.baseScale.x*sx,ud.baseScale.y*sy,1);
+}
 
 function animate(){
   requestAnimationFrame(animate);
@@ -952,6 +968,7 @@ function animate(){
   // Rogue drones orbit / chase
   rogueDrones.forEach(d=>{
     d.position.y=4+Math.sin(time*2+d.userData.phase)*1.5;
+    animateWalkCycle(d,time,true);
     const toPlayer=player.position.clone().sub(d.position);
     if(toPlayer.length()>3){
       toPlayer.normalize().multiplyScalar(d.userData.speed*60*delta);
@@ -990,6 +1007,7 @@ function animate(){
     }
     enemyNpcs.forEach(e=>{
       e.position.y=1.5+Math.sin(time*2+e.userData.phase)*0.08;
+      animateWalkCycle(e,time,false);
       const toMan=theMan.position.clone().sub(e.position);toMan.y=0;
       if(toMan.length()>8){
         toMan.normalize().multiplyScalar(4*delta);
