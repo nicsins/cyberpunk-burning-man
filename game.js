@@ -612,6 +612,7 @@ function checkPhaseUnlocks(){
     document.getElementById('btn-suppress').style.display='block';
     document.getElementById('btn-wind').style.display='block';
     showPhaseBanner('PHASE 3: DEFEND THE MAN — Enemies try to burn the effigy! Extinguish fires, eliminate arsonists');
+    showMissionBriefing('Defend The Man. Clear the drones. Then light it.');
     spawnArsonists(4);
   }
   if(phaseUnlocked.defend && enemyNpcs.length===0 && fires.length===0 && manIntegrity>20){
@@ -652,6 +653,34 @@ function updateObjectiveMarker(){
   const ang=Math.atan2(_objV.x,-_objV.z);
   document.getElementById('obj-arrow').style.transform=`rotate(${ang}rad)`;
   document.getElementById('obj-label').textContent=`${o.label} · ${Math.round(flatDist(controls.getObject().position,o.pos))}m`;
+}
+
+function showMissionBriefing(msg){
+  let el=document.getElementById('mission-briefing');
+  if(!el){
+    el=document.createElement('div');el.id='mission-briefing';
+    el.style.cssText='position:fixed;top:38%;left:50%;transform:translate(-50%,-50%);z-index:30;pointer-events:none;padding:14px 26px;border:1px solid #f0f8;border-radius:12px;background:rgba(20,0,30,.82);color:#fff;font-size:1.25rem;letter-spacing:.05em;text-align:center;box-shadow:0 0 28px #f0f6;transition:opacity .6s';
+    document.body.appendChild(el);
+  }
+  el.innerHTML=`<div style="font-size:.65rem;color:#f0f;margin-bottom:4px">MISSION BRIEFING</div>${msg}`;
+  el.style.display='block';el.style.opacity='1';
+  clearTimeout(el._t1);clearTimeout(el._t2);
+  el._t1=setTimeout(()=>el.style.opacity='0',4500);
+  el._t2=setTimeout(()=>el.style.display='none',5200);
+}
+function updateDangerIndicator(time){
+  let el=document.getElementById('man-danger');
+  const active=(gamePhase==='defend'||gamePhase==='burn')&&manIntegrity<50;
+  if(!el){
+    if(!active)return;
+    el=document.createElement('div');el.id='man-danger';
+    el.style.cssText='position:fixed;top:120px;left:50%;transform:translateX(-50%);z-index:25;pointer-events:none;padding:6px 16px;border-radius:8px;background:rgba(80,0,0,.85);border:1px solid #f44;color:#ff6b6b;font-weight:bold;font-size:.85rem;letter-spacing:.06em';
+    document.body.appendChild(el);
+  }
+  if(!active){el.style.display='none';return}
+  el.style.display='block';
+  el.textContent=`⚠ THE MAN IN DANGER — ${Math.round(manIntegrity)}% INTEGRITY`;
+  el.style.opacity=String(0.55+0.45*Math.abs(Math.sin(time*4)));
 }
 
 function setPhase(p){
@@ -1035,6 +1064,7 @@ function animate(){
 
   if(generators.length)document.getElementById('status').textContent=`ZPEGs:${generators.length} | Phase:${gamePhase}`;
   updateObjectiveMarker();
+  updateDangerIndicator(time);
   composer.render(delta);
 }
 
