@@ -21,6 +21,7 @@ let manIntegrity=100,appsDeployed=0,zpegsPlaced=0,questsDone=0;
 let frostCooldown=0,attackCooldown=0,droneWaveCleared=false;
 let phaseUnlocked={drone:false,defend:false,burn:false};
 let labels=[];
+const AUTO_PICKUP_RANGE=1.5,PICKUP_PULSE_RANGE=4;
 // look-dev layer (lookdev.js)
 let composer,skyGroup,dustGroup,manGlow,carGlow,itemRings,lightPool,lightCandidates=[],staticGlow;
 
@@ -492,16 +493,9 @@ function interact(){
     }
   }
 
-  // Collectibles
+  // Collectibles (keypress fallback for items just outside auto-pickup range)
   for(let i=collectibles.length-1;i>=0;i--){
-    const c=collectibles[i];
-    if(pos.distanceTo(c.position)<2.5){
-      const key=c.userData.itemKey;
-      inventory[key]=(inventory[key]||0)+1;
-      scene.remove(c);collectibles.splice(i,1);
-      showToast(`Collected ${ITEM_DEFS[key].emoji} ${ITEM_DEFS[key].name}`);
-      updateUI();checkPhaseUnlocks();return;
-    }
+    if(pos.distanceTo(collectibles[i].position)<2.5){collect(i);return}
   }
 
   if(pos.distanceTo(theMan.position)<16){
@@ -551,6 +545,31 @@ function interact(){
     return;
   }
   showToast("Nothing nearby. Collect glowing items, talk to NPCs, or approach The Man.");
+}
+
+function collect(i){
+  const c=collectibles[i];if(!c)return;
+  const key=c.userData.itemKey;
+  inventory[key]=(inventory[key]||0)+1;
+  scene.remove(c);collectibles.splice(i,1);
+  showToast(`Collected ${ITEM_DEFS[key].emoji} ${ITEM_DEFS[key].name}`);
+  updateUI();checkPhaseUnlocks();
+}
+
+// Ground-plane distance so hover bob / flight height don't block pickup.
+function flatDist(a,b){const dx=a.x-b.x,dz=a.z-b.z;return Math.sqrt(dx*dx+dz*dz)}
+
+function autoPickup(time){
+  if(isFlying)return;
+  for(let i=collectibles.length-1;i>=0;i--){
+    const c=collectibles[i];
+    const d=flatDist(player.position,c.position);
+    if(!c.userData.baseScale)c.userData.baseScale=c.scale.clone();
+    if(d<AUTO_PICKUP_RANGE){collect(i);continue}
+    // subtle pulse on items close enough to grab
+    const k=d<PICKUP_PULSE_RANGE?1+Math.sin(time*8+c.userData.phase)*0.12:1;
+    c.scale.copy(c.userData.baseScale).multiplyScalar(k);
+  }
 }
 
 function tryCompleteQuest(npc){
@@ -857,6 +876,7 @@ function animate(){
     player.position.z=controls.getObject().position.z;
     player.position.y=isFlying?controls.getObject().position.y-1.5:0;
     if(playerMesh)playerMesh.visible=!isLocked || isFlying;
+    autoPickup(time);
   }else if(playerMesh)playerMesh.visible=true;
 
   installations.forEach(obj=>{
