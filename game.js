@@ -324,6 +324,7 @@ async function init(){
   // Wheel = forward/back impulse; middle-drag = strafe
   document.addEventListener('wheel',onWheel,{passive:false});
   document.addEventListener('mouseup',onMouseUp);
+  document.addEventListener('auxclick',e=>{if(e.button>=1)e.preventDefault()});
   document.addEventListener('mousemove',onMouseMoveStrafe);
   window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer&&composer.resize(innerWidth,innerHeight)});
   document.getElementById('canvas-container').addEventListener('click',()=>{if(!dialogueOpen&&!panelOpen)controls.lock()});
@@ -400,6 +401,18 @@ function onMouseDown(e){
     e.preventDefault(); // no autoscroll
     middleHeld=true;
     if(controls){savedPointerSpeed=controls.pointerSpeed??1;controls.pointerSpeed=0} // freeze look while strafing
+    return;
+  }
+  // Side buttons: back (3) = inventory panel, forward (4) = talk/interact. preventDefault blocks browser nav.
+  if(e.button===3||e.button===4){
+    e.preventDefault();
+    if(!gameStarted)return;
+    if(e.button===3){
+      if(dialogueOpen)return;
+      if(!panelOpen){controls?.unlock?.();togglePanel();switchTab('inv')}else togglePanel();
+    }else{
+      if(dialogueOpen)closeDialogue();else if(!panelOpen)interact();
+    }
     return;
   }
   if(e.button===0 && isLocked && !dialogueOpen && !panelOpen){
