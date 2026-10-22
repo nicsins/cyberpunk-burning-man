@@ -321,6 +321,10 @@ async function init(){
   document.addEventListener('keydown',onKeyDown);
   document.addEventListener('keyup',onKeyUp);
   document.addEventListener('mousedown',onMouseDown);
+  // Wheel = forward/back impulse; middle-drag = strafe
+  document.addEventListener('wheel',onWheel,{passive:false});
+  document.addEventListener('mouseup',onMouseUp);
+  document.addEventListener('mousemove',onMouseMoveStrafe);
   window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);composer&&composer.resize(innerWidth,innerHeight)});
   document.getElementById('canvas-container').addEventListener('click',()=>{if(!dialogueOpen&&!panelOpen)controls.lock()});
   controls.addEventListener('lock',()=>isLocked=true);
@@ -372,7 +376,32 @@ function onKeyUp(e){
     case 'KeyD':case 'ArrowRight':moveRight=false;break;
   }
 }
+let middleHeld=false,savedPointerSpeed=1;
+function mouseMoveAllowed(){return gameStarted&&!dialogueOpen&&!panelOpen}
+function onWheel(e){
+  if(!mouseMoveAllowed()||e.target.closest?.('#panel,#dialogue'))return;
+  e.preventDefault();
+  // deltaY<0 = wheel up = forward. Clamp so trackpads/fast wheels stay smooth.
+  const step=Math.max(-1,Math.min(1,-e.deltaY/100));
+  velocity.z-=step*(isFlying?9:6);
+  velocity.z=Math.max(-30,Math.min(30,velocity.z));
+}
+function onMouseMoveStrafe(e){
+  if(!middleHeld||!mouseMoveAllowed())return;
+  velocity.x-=(e.movementX||0)*0.15;
+  velocity.x=Math.max(-30,Math.min(30,velocity.x));
+}
+function onMouseUp(e){
+  if(e.button===1&&middleHeld){middleHeld=false;if(controls)controls.pointerSpeed=savedPointerSpeed}
+  if(e.button===3||e.button===4)e.preventDefault();
+}
 function onMouseDown(e){
+  if(e.button===1&&gameStarted){
+    e.preventDefault(); // no autoscroll
+    middleHeld=true;
+    if(controls){savedPointerSpeed=controls.pointerSpeed??1;controls.pointerSpeed=0} // freeze look while strafing
+    return;
+  }
   if(e.button===0 && isLocked && !dialogueOpen && !panelOpen){
     if(gamePhase==='drone'||gamePhase==='defend') attackNearest();
   }
