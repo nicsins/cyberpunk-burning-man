@@ -676,7 +676,7 @@ function takeGun(){
   if(gunPickup){scene.remove(gunPickup);gunPickup=null}
   showToast(`🔫 Plasma Rifle! Left-click to fire (${AMMO_MAX} rounds, +1 every ${AMMO_REGEN_SEC}s)`);
 }
-window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,get ammo(){return ammo},autoPickup};
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -1037,6 +1037,36 @@ let arsonSpawnTimer=0,fireTick=0;
 const WALK_FRAME_MS=300;
 // Two-frame walk cycle: swaps userData.frames[0/1] textures when a second frame exists,
 // otherwise a procedural step (tilt + squash/stretch) on the same 300ms beat.
+// ---- Lightweight solid collisions (XZ circles; skipped when flying above the obstacle) ----
+// Intentionally simple so it doesn't fight PR #4's Rapier controller; swap for PHYS when that lands.
+let staticColliders=null;
+const PLAYER_R=0.5;
+function buildColliders(){
+  const out=[];
+  if(theMan)out.push({x:theMan.position.x,z:theMan.position.z,r:4,h:12});
+  installations.forEach(o=>{
+    if(o.userData.isStation)out.push({x:o.position.x,z:o.position.z,r:1.8,h:1});
+    else if(o.children&&o.children.length>=6&&Math.abs(o.position.x+62)<1){ // temple pillars
+      for(let i=0;i<4;i++)out.push({x:o.position.x+(i%2?4.5:-4.5),z:o.position.z+(i<2?4.5:-4.5),r:0.6,h:11});
+    }
+  });
+  npcs.forEach(n=>out.push({ref:n,r:0.6,h:2.5}));
+  return out;
+}
+function resolveCollisions(pos){
+  if(!staticColliders)staticColliders=buildColliders();
+  const dyn=[];
+  installations.forEach(o=>{if(o.userData.isCar)dyn.push({x:o.position.x,z:o.position.z,r:2.4,h:3})});
+  enemyNpcs.forEach(e=>dyn.push({x:e.position.x,z:e.position.z,r:0.6,h:2.5}));
+  const feet=pos.y-1.7;
+  for(const c of staticColliders.concat(dyn)){
+    const cx=c.ref?c.ref.position.x:c.x,cz=c.ref?c.ref.position.z:c.z;
+    if(feet>c.h)continue;
+    const dx=pos.x-cx,dz=pos.z-cz,d=Math.hypot(dx,dz),min=c.r+PLAYER_R;
+    if(d<min&&d>1e-4){const push=(min-d)/d;pos.x+=dx*push;pos.z+=dz*push;velocity.x*=0.5;velocity.z*=0.5}
+  }
+}
+
 function animateWalkCycle(spr,time,isDrone){
   const ud=spr.userData;
   if(!ud.baseScale)ud.baseScale=spr.scale.clone();
@@ -1059,15 +1089,18 @@ function animate(){
   tickAmmoRegen(delta);
 
   if(isLocked&&!dialogueOpen&&!panelOpen){
-    velocity.x-=velocity.x*10*delta;velocity.z-=velocity.z*10*delta;
+    // Friction: firm on foot, glidey in the air so flight has momentum.
+    const fr=isFlying?2.5:8;
+    velocity.x-=velocity.x*fr*delta;velocity.z-=velocity.z*fr*delta;
     if(!isFlying)velocity.y-=18.5*delta;
     else velocity.y-=velocity.y*3*delta;
 
     direction.z=Number(moveForward)-Number(moveBackward);direction.x=Number(moveRight)-Number(moveLeft);direction.normalize();
-    const speed=isFlying?70:46;
+    const speed=isFlying?40:60; // terminal ≈ speed/friction: ~7.5 u/s walking, ~16 u/s flying
     if(moveForward||moveBackward)velocity.z-=direction.z*speed*delta;
     if(moveLeft||moveRight)velocity.x-=direction.x*speed*delta;
     controls.moveRight(-velocity.x*delta);controls.moveForward(-velocity.z*delta);
+    resolveCollisions(controls.getObject().position);
 
     if(isFlying){
       controls.getObject().position.y+=velocity.y*delta;
