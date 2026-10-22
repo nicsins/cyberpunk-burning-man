@@ -689,7 +689,7 @@ function takeGun(){
   if(gunPickup){scene.remove(gunPickup);gunPickup=null}
   showToast(`🔫 Plasma Rifle! Left-click to fire (${AMMO_MAX} rounds, +1 every ${AMMO_REGEN_SEC}s)`);
 }
-window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup};
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,startDroneMode,get droneMode(){return droneMode},get rogueDrones(){return rogueDrones},toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -829,7 +829,22 @@ function spawnRogueDrones(n){
   showToast(`${n} rogue drones inbound!`);
 }
 
+let droneMode=false,droneModeWave=0;
+function startDroneMode(){
+  droneMode=true;droneModeWave=1;
+  takeGun();inventory.bomb=(inventory.bomb||0)+3;
+  phaseUnlocked.drone=true;setPhase('drone');
+  if(padDrone){rideDrone=padDrone;boardDrone()}
+  controls.getObject().position.y=8;
+  spawnRogueDrones(6);
+  showPhaseBanner('DRONE MODE — wave 1 · Click fire · G bomb · Space climb · WASD/wheel fly');
+}
 function checkDroneWave(){
+  if(droneMode&&rogueDrones.length===0){
+    droneModeWave++;tokens+=20;inventory.bomb=(inventory.bomb||0)+1;ammo=AMMO_MAX;updateAmmoHud();
+    showPhaseBanner(`DRONE MODE — wave ${droneModeWave} (+20 tokens, +1 bomb, ammo refilled)`);
+    setTimeout(()=>spawnRogueDrones(4+droneModeWave*2),2500);updateUI();return;
+  }
   if(rogueDrones.length===0 && gamePhase==='drone'){
     droneWaveCleared=true;
     showToast('All rogue drones cleared! Deploy more apps / ZPEGs to unlock Defend phase.');
@@ -1409,6 +1424,17 @@ document.querySelectorAll('.char-card').forEach(card=>{
     document.getElementById('start-btn').disabled=false;
   });
 });
+// Drone Mode: arcade start straight into rogue-drone waves on the pad drone with the rifle.
+{
+  const sb=document.getElementById('start-btn');
+  const db=document.createElement('button');db.id='drone-mode-btn';db.textContent='🛸 DRONE MODE';
+  db.style.cssText=sb.style.cssText+';margin-left:10px;margin-top:1rem;padding:14px 30px;font-size:1rem;font-weight:bold;background:linear-gradient(90deg,#0ff,#f0f);color:#000;border:none;border-radius:50px;cursor:pointer';
+  sb.insertAdjacentElement('afterend',db);
+  db.addEventListener('click',()=>{
+    if(!selectedChar){selectedChar='dragon';document.querySelector('[data-char="dragon"]')?.classList.add('selected')}
+    sb.disabled=false;sb.click();setTimeout(()=>startDroneMode(),900);
+  });
+}
 document.getElementById('start-btn').addEventListener('click',()=>{
   if(!selectedChar)return;
   document.getElementById('title-screen').style.opacity='0';
