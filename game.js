@@ -299,7 +299,7 @@ async function init(){
     for(let k=0;k<4;k++){const a=k*Math.PI/2+Math.PI/4;const r=new THREE.Mesh(new THREE.TorusGeometry(0.45,0.06,6,16),new THREE.MeshBasicMaterial({color:0x00ffcc}));r.rotation.x=Math.PI/2;r.position.set(Math.cos(a)*1.4,0.15,Math.sin(a)*1.4);g.add(r)}
     const pad=new THREE.Mesh(new THREE.RingGeometry(1.8,2.2,32),new THREE.MeshBasicMaterial({color:0x00ffcc,side:THREE.DoubleSide,transparent:true,opacity:0.6}));
     pad.rotation.x=-Math.PI/2;pad.position.set(-5,0.05,21);scene.add(pad);
-    g.position.set(-5,0.9,21);g.userData.home=g.position.clone();scene.add(g);rideDrone=g;
+    g.position.set(-5,0.9,21);g.userData.home=g.position.clone();scene.add(g);rideDrone=g;padDrone=g;
   }
   spawnWorldPickups();renderForgeUI();
   player=new THREE.Group();player.position.set(0,0,26);scene.add(player);
@@ -391,6 +391,7 @@ function onKeyDown(e){
     case 'KeyE':interact();break;
     case 'KeyF':toggleFlight();break;
     case 'KeyR':useSpecialAbility();break;
+    case 'KeyH':if(gameStarted)toggleRideFF();break;
     case 'KeyG':if(gameStarted)throwBomb();break;
     case 'KeyX':if(gameStarted)sprayFoam();break;
     case 'Digit1':createPlayerMesh('dragon');showToast('🐉 DRAGON — F to fly · R frost breath');break;
@@ -569,6 +570,7 @@ function boardDrone(){
 function exitDrone(){
   droneBoarded=false;isFlying=false;controls.getObject().position.y=1.7;
   if(rideDrone)rideDrone.position.set(player.position.x+2,0.9,player.position.z);
+  if(rideDrone===ffDrone)rideDrone=padDrone;
   showToast('Landed — drone parked next to you. E to board again.');
 }
 function interact(){
@@ -686,7 +688,7 @@ function takeGun(){
   if(gunPickup){scene.remove(gunPickup);gunPickup=null}
   showToast(`🔫 Plasma Rifle! Left-click to fire (${AMMO_MAX} rounds, +1 every ${AMMO_REGEN_SEC}s)`);
 }
-window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup};
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -1080,7 +1082,7 @@ function resolveCollisions(pos){
 
 // ---- Pickups (ammo crates, bombs) + forge (extinguisher, scanner) ----
 const _hintAt={};function hint(k,msg,cool=20){const n=performance.now();if(_hintAt[k]&&n-_hintAt[k]<cool*1000)return;_hintAt[k]=n;showToast(msg)}
-let ffDrone=null;
+let ffDrone=null,padDrone=null;
 let ammoPickups=[],bombPickups=[],bombsLive=[],extCharges=0,hasScanner=false;
 const BOMB_RADIUS=8,BOMB_DMG=60;
 function spawnWorldPickups(){
@@ -1175,6 +1177,39 @@ function renderForgeUI(){
   box.innerHTML='<h3 style="margin-top:8px">🔨 Forge</h3>'+FORGE.map(f=>`<button class="station-btn" onclick="forgeItem('${f.id}')">${f.label}<small>${f.desc}</small></button>`).join('');
 }
 
+
+// ---- Firefighter Drone: forged companion; auto-hunts fires, H to ride (X/right-click sprays foam, unlimited) ----
+let ffCool=0;
+function makeFFDrone(){
+  const g=new THREE.Group();
+  const hull=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.35,1.0),new THREE.MeshStandardMaterial({color:0x330000,emissive:0xff2200,emissiveIntensity:1.2,metalness:0.7,roughness:0.3}));
+  const tank=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.25,0.9,10),new THREE.MeshBasicMaterial({color:0xffffff}));tank.rotation.z=Math.PI/2;tank.position.y=0.3;
+  g.add(hull,tank);
+  for(let k=0;k<4;k++){const r=new THREE.Mesh(new THREE.TorusGeometry(0.35,0.05,6,14),new THREE.MeshBasicMaterial({color:0xff4422}));r.rotation.x=Math.PI/2;r.position.set(k%2?0.8:-0.8,0.2,k<2?0.6:-0.6);g.add(r)}
+  g.position.set(player.position.x+2,3,player.position.z);scene.add(g);return g;
+}
+function toggleRideFF(){
+  if(!ffDrone){hint('noff','🚒 Forge a Firefighter Drone in Ω Panel (I) → Forge');return}
+  if(droneBoarded){exitDrone();return}
+  rideDrone=ffDrone;boardDrone();showToast('🚒 Riding Firefighter Drone — X / right-click sprays foam (unlimited) · H to hop off');
+}
+function tickFFDrone(delta,time){
+  if(!ffDrone||(droneBoarded&&rideDrone===ffDrone))return;
+  if(!droneBoarded&&rideDrone===ffDrone)rideDrone=padDrone;
+  ffCool-=delta;
+  let best=null,bd=Infinity;for(const f of fires){const d=flatDist(ffDrone.position,f.position);if(d<bd){bd=d;best=f}}
+  const tgt=best?best.position:new THREE.Vector3(player.position.x+2.5,0,player.position.z+1.5);
+  const dx=tgt.x-ffDrone.position.x,dz=tgt.z-ffDrone.position.z,d=Math.hypot(dx,dz);
+  if(d>0.8){const sp=Math.min(d,(best?9:12)*delta);ffDrone.position.x+=dx/d*sp;ffDrone.position.z+=dz/d*sp}
+  ffDrone.position.y=(best?2.2:3)+Math.sin(time*3)*0.15;ffDrone.rotation.y=Math.atan2(dx,dz);
+  if(best&&bd<1.8&&ffCool<=0){
+    ffCool=1.2;scene.remove(best);fires.splice(fires.indexOf(best),1);manIntegrity=Math.min(100,manIntegrity+4);
+    showToast('🚒 Firefighter Drone put out a fire');if(gamePhase==='defend')checkDefendWin();updateUI();
+  }
+}
+FORGE.push({id:'ff-drone',label:'🚒 Firefighter Drone',desc:'Companion that flies to fires and foams them; H to ride. Cost: Circuit Board + Fiber Coil or 60 tokens',items:{'circuit-board':1,'fiber-coil':1},tokens:60,
+  onForge(){if(ffDrone){showToast('You already have a Firefighter Drone');return}ffDrone=makeFFDrone();inventory['ff-drone']=1;showToast('🚒 Firefighter Drone deployed — it hunts fires on its own. H to ride it.')}});
+
 function animateWalkCycle(spr,time,isDrone){
   const ud=spr.userData;
   if(!ud.baseScale)ud.baseScale=spr.scale.clone();
@@ -1196,6 +1231,7 @@ function animate(){
   if(attackCooldown>0)attackCooldown-=delta;
   tickAmmoRegen(delta);
   tickBombs(delta);
+  tickFFDrone(delta,time);
 
   if(isLocked&&!dialogueOpen&&!panelOpen){
     // Friction: firm on foot, glidey in the air so flight has momentum.
