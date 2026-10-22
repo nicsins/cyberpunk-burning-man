@@ -24,6 +24,7 @@ let labels=[];
 const AMMO_MAX=12,AMMO_REGEN_SEC=8;
 let ammo=AMMO_MAX,ammoRegenTimer=0;
 let hasGun=false,gunPickup=null;
+let rideDrone=null,droneBoarded=false,droneEverBoarded=false;
 const AUTO_PICKUP_RANGE=2.0,PICKUP_PULSE_RANGE=4,AUTO_PICKUP_MAX_ALT=4;
 let gameStarted=false;
 const lastPickupPos=new THREE.Vector3(NaN,0,NaN);
@@ -286,6 +287,16 @@ async function init(){
     beam.position.y=3.3;g.add(beam);
     g.position.set(3,1,21);scene.add(g);gunPickup=g;
   }
+  // Pilotable hover-drone on a pad near spawn (E / mouse-forward to board; any character)
+  {
+    const g=new THREE.Group();
+    const hull=new THREE.Mesh(new THREE.CylinderGeometry(1.1,1.3,0.4,6),new THREE.MeshStandardMaterial({color:0x1a1a2a,emissive:0x00ffcc,emissiveIntensity:0.9,metalness:0.8,roughness:0.3}));
+    g.add(hull);
+    for(let k=0;k<4;k++){const a=k*Math.PI/2+Math.PI/4;const r=new THREE.Mesh(new THREE.TorusGeometry(0.45,0.06,6,16),new THREE.MeshBasicMaterial({color:0x00ffcc}));r.rotation.x=Math.PI/2;r.position.set(Math.cos(a)*1.4,0.15,Math.sin(a)*1.4);g.add(r)}
+    const pad=new THREE.Mesh(new THREE.RingGeometry(1.8,2.2,32),new THREE.MeshBasicMaterial({color:0x00ffcc,side:THREE.DoubleSide,transparent:true,opacity:0.6}));
+    pad.rotation.x=-Math.PI/2;pad.position.set(-5,0.05,21);scene.add(pad);
+    g.position.set(-5,0.9,21);g.userData.home=g.position.clone();scene.add(g);rideDrone=g;
+  }
   player=new THREE.Group();player.position.set(0,0,26);scene.add(player);
   createPlayerMesh('dragon');
 
@@ -432,12 +443,13 @@ function onMouseDown(e){
 }
 
 function toggleFlight(){
+  if(droneBoarded){exitDrone();return}
   if(selectedChar!=='dragon' && !pandaRiding){
-    showToast('Only Dragon can fly solo. Panda can ride once Dragon is flying nearby.');
+    showToast('Only Dragon can fly solo. Panda: board the drone on the cyan pad near spawn (E).');
     return;
   }
   if(gamePhase==='collect' && !phaseUnlocked.drone){
-    showToast('Flight unlocks after you place ZPEGs / deploy apps / clear early quests.');
+    showToast('Dragon flight unlocks in Phase 2 (place 2 ZPEGs, 80 tokens, 3 quests or 2 apps). Fly now: board the drone on the cyan pad near spawn (E).');
     checkPhaseUnlocks();
     return;
   }
@@ -540,7 +552,19 @@ function deploySuppressDrone(){
   updateUI();
 }
 
+function boardDrone(){
+  droneBoarded=true;droneEverBoarded=true;isFlying=true;
+  flyHeight=Math.max(controls.getObject().position.y,4);
+  showToast('🛸 Drone boarded — Space climb · WASD/wheel move · F or E to land');
+}
+function exitDrone(){
+  droneBoarded=false;isFlying=false;controls.getObject().position.y=1.7;
+  if(rideDrone)rideDrone.position.set(player.position.x+2,0.9,player.position.z);
+  showToast('Landed — drone parked next to you. E to board again.');
+}
 function interact(){
+  if(droneBoarded){exitDrone();return}
+  if(rideDrone&&flatDist(player.position,rideDrone.position)<3.5){boardDrone();return}
   const pos=player.position.clone();pos.y=1.5;
 
   // Stomp fires
@@ -652,7 +676,7 @@ function takeGun(){
   if(gunPickup){scene.remove(gunPickup);gunPickup=null}
   showToast(`🔫 Plasma Rifle! Left-click to fire (${AMMO_MAX} rounds, +1 every ${AMMO_REGEN_SEC}s)`);
 }
-window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get ammo(){return ammo},autoPickup};
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,get ammo(){return ammo},autoPickup};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -706,6 +730,7 @@ function checkPhaseUnlocks(){
 // Current phase goal: x402 Broker (collect), nearest rogue drone (drone), The Man (defend/burn).
 function currentObjective(){
   if(!hasGun&&gunPickup)return {pos:gunPickup.position,label:'Plasma Rifle'};
+  if(!droneEverBoarded&&rideDrone&&!droneBoarded)return {pos:rideDrone.position,label:'Ride drone (E)'};
   if(gamePhase==='collect'){const b=npcs.find(n=>n.userData.name==='x402 Broker');return b?{pos:b.position,label:'x402 Broker'}:null}
   if(gamePhase==='drone'){
     let best=null,bd=Infinity;
@@ -1056,6 +1081,7 @@ function animate(){
     player.position.z=controls.getObject().position.z;
     player.position.y=isFlying?controls.getObject().position.y-1.5:0;
     if(playerMesh)playerMesh.visible=!isLocked || isFlying;
+    if(droneBoarded&&rideDrone){rideDrone.position.set(player.position.x,player.position.y+0.4,player.position.z);rideDrone.rotation.y+=0.02}
   }else if(playerMesh)playerMesh.visible=true;
   // Run pickup every frame once the game starts, not only while pointer-locked.
   if(gameStarted&&!dialogueOpen)autoPickup(time);
@@ -1165,6 +1191,7 @@ document.getElementById('start-btn').addEventListener('click',()=>{
     document.getElementById('ui').style.display='flex';
     createPlayerMesh(selectedChar);
     gameStarted=true;
+    setTimeout(()=>showToast('🔫 Orange beam = Plasma Rifle · 🛸 cyan pad = drone (E to board) · Dragon: F to fly after Phase 2'),4000);
     showToast(`Welcome as ${selectedChar.toUpperCase()}! Collect items, build ZPEGs, unlock flight & defend The Man.`);
   },750);
 });
