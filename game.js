@@ -512,9 +512,10 @@ function spawnFrostBreath(){
 function attackNearest(){
   if(attackCooldown>0)return;
   if(!hasGun){showToast('🔫 No weapon — grab the Plasma Rifle (orange beam) near spawn');return}
-  if(ammo<=0){showToast(`Out of ammo — +1 round every ${AMMO_REGEN_SEC}s`);return}
+  if(ammo<=0){hint('lowammo','📦 Out of ammo — orange ammo crates on the minimap',15);showToast(`Out of ammo — +1 round every ${AMMO_REGEN_SEC}s`);return}
   attackCooldown=0.45;
   ammo--;ammoRegenTimer=0;updateAmmoHud();
+  if(ammo<=3)hint('lowammo',`📦 Low ammo (${ammo}) — grab orange ammo crates (minimap) or wait for regen`,30);
   damageInFront(8,22);
   showToast('⚡ Attack!');
 }
@@ -813,6 +814,8 @@ function showPhaseBanner(msg){
 }
 
 function spawnRogueDrones(n){
+  if(!hasGun)setTimeout(()=>hint('needgun','🔫 Drones incoming — grab the Plasma Rifle (orange beam near spawn) to fight back'),1500);
+  else if((inventory.bomb||0)>0)setTimeout(()=>hint('bombtip','💣 Tip: G throws a bomb — great vs. drone clusters'),3000);
   for(let i=0;i<n;i++){
     const mat=new THREE.SpriteMaterial({map:textures.rogue_drone||null,transparent:true,alphaTest:0.1,depthWrite:false});
     if(!textures.rogue_drone)mat.color=new THREE.Color(LOOK.PAL.hostile);
@@ -859,6 +862,9 @@ function spawnFireNearMan(){
   spr.position.set(Math.cos(a)*r,0.4,Math.sin(a)*r);
   spr.userData={isFire:true,phase:Math.random()*Math.PI*2};
   scene.add(spr);fires.push(spr);
+  if(ffDrone)hint('fire','🔥 Fire at The Man — your Firefighter Drone is on it (H to ride & spray)',25);
+  else if(extCharges>0)hint('fire',`🔥 Fire at The Man! Run over and press X to foam it (${extCharges} charges)`,25);
+  else hint('fire','🔥 Fire at The Man! Stomp it with E, or forge an Extinguisher / Firefighter Drone in Ω Panel (I) → Forge',25);
   manIntegrity=Math.max(0,manIntegrity-3);
   if(manIntegrity<=0){
     showToast('⚠️ THE MAN IS BURNING UNCONTROLLED! Extinguish fires NOW!');
