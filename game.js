@@ -1216,6 +1216,47 @@ function tickFFDrone(delta,time){
 FORGE.push({id:'ff-drone',label:'🚒 Firefighter Drone',desc:'Companion that flies to fires and foams them; H to ride. Cost: Circuit Board + Fiber Coil or 60 tokens',items:{'circuit-board':1,'fiber-coil':1},tokens:60,
   onForge(){if(ffDrone){showToast('You already have a Firefighter Drone');return}ffDrone=makeFFDrone();inventory['ff-drone']=1;showToast('🚒 Firefighter Drone deployed — it hunts fires on its own. H to ride it.')}});
 
+
+// ---- Minimap radar (heading-up, 60m radius) ----
+let mmCtx=null;const MM_SIZE=150,MM_RANGE=60;
+function ensureMinimap(){
+  if(mmCtx)return mmCtx;
+  const c=document.createElement('canvas');c.id='minimap';c.width=c.height=MM_SIZE;
+  c.style.cssText='position:fixed;right:14px;bottom:14px;width:150px;height:150px;border-radius:50%;border:2px solid #0ff8;background:rgba(0,10,25,.7);box-shadow:0 0 20px #0ff4;z-index:15;pointer-events:none';
+  document.body.appendChild(c);mmCtx=c.getContext('2d');return mmCtx;
+}
+function drawMinimap(){
+  if(!gameStarted||!player)return;
+  const g=ensureMinimap(),R=MM_SIZE/2,sc=R/MM_RANGE;
+  const f=new THREE.Vector3();camera.getWorldDirection(f);f.y=0;if(f.lengthSq()<1e-6)f.set(0,0,-1);f.normalize();
+  const rx=-f.z,rz=f.x;
+  g.clearRect(0,0,MM_SIZE,MM_SIZE);
+  g.save();g.beginPath();g.arc(R,R,R-1,0,Math.PI*2);g.clip();
+  g.strokeStyle='#0ff3';g.lineWidth=1;[R*0.33,R*0.66].forEach(r=>{g.beginPath();g.arc(R,R,r,0,Math.PI*2);g.stroke()});
+  const dot=(p,col,size=3,shape='dot',clamp=false)=>{
+    const dx=p.x-player.position.x,dz=p.z-player.position.z;
+    let sx=(dx*rx+dz*rz)*sc,sy=-(dx*f.x+dz*f.z)*sc;
+    const d=Math.hypot(sx,sy);if(d>R-6){if(!clamp)return;sx*=(R-6)/d;sy*=(R-6)/d}
+    g.fillStyle=col;g.beginPath();
+    if(shape==='sq')g.rect(R+sx-size,R+sy-size,size*2,size*2);
+    else if(shape==='tri'){g.moveTo(R+sx,R+sy-size-1);g.lineTo(R+sx+size,R+sy+size);g.lineTo(R+sx-size,R+sy+size)}
+    else g.arc(R+sx,R+sy,size,0,Math.PI*2);
+    g.fill();
+  };
+  ammoPickups.forEach(m=>dot(m.position,'#ffaa00',2.2,'sq'));
+  bombPickups.forEach(m=>dot(m.position,'#ff2244',2.5));
+  if(gunPickup&&!hasGun)dot(gunPickup.position,'#ff7700',4.5,'sq',true);
+  if(padDrone&&!(droneBoarded&&rideDrone===padDrone))dot(padDrone.position,'#00ffcc',4,'tri',true);
+  if(ffDrone&&!(droneBoarded&&rideDrone===ffDrone))dot(ffDrone.position,'#ff3311',4,'tri',true);
+  fires.forEach(m=>dot(m.position,'#ff8800',2));
+  const broker=npcs.find(n=>n.userData.name==='x402 Broker');if(broker)dot(broker.position,'#ffff00',4,'dot',true);
+  if(theMan)dot(theMan.position,'#ffffff',5,'dot',true);
+  if(hasScanner){rogueDrones.forEach(d=>dot(d.position,'#ff00ff',3));enemyNpcs.forEach(e=>dot(e.position,'#ff0044',3))}
+  g.restore();
+  g.fillStyle='#0ff';g.beginPath();g.moveTo(R,R-8);g.lineTo(R+5,R+5);g.lineTo(R,R+2);g.lineTo(R-5,R+5);g.fill();
+  g.fillStyle='#9cf';g.font='9px monospace';g.fillText(hasScanner?'SCAN ON':'no scanner',R-24,MM_SIZE-10);
+}
+
 function animateWalkCycle(spr,time,isDrone){
   const ud=spr.userData;
   if(!ud.baseScale)ud.baseScale=spr.scale.clone();
@@ -1238,6 +1279,7 @@ function animate(){
   tickAmmoRegen(delta);
   tickBombs(delta);
   tickFFDrone(delta,time);
+  drawMinimap();
 
   if(isLocked&&!dialogueOpen&&!panelOpen){
     // Friction: firm on foot, glidey in the air so flight has momentum.
