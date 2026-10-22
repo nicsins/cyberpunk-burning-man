@@ -23,7 +23,9 @@ let phaseUnlocked={drone:false,defend:false,burn:false};
 let labels=[];
 const AMMO_MAX=12,AMMO_REGEN_SEC=8;
 let ammo=AMMO_MAX,ammoRegenTimer=0;
-const AUTO_PICKUP_RANGE=1.5,PICKUP_PULSE_RANGE=4;
+const AUTO_PICKUP_RANGE=2.0,PICKUP_PULSE_RANGE=4,AUTO_PICKUP_MAX_ALT=4;
+let gameStarted=false;
+const lastPickupPos=new THREE.Vector3(NaN,0,NaN);
 // look-dev layer (lookdev.js)
 let composer,skyGroup,dustGroup,manGlow,carGlow,itemRings,lightPool,lightCandidates=[],staticGlow;
 
@@ -499,7 +501,7 @@ function interact(){
 
   // Collectibles (keypress fallback for items just outside auto-pickup range)
   for(let i=collectibles.length-1;i>=0;i--){
-    if(pos.distanceTo(collectibles[i].position)<2.5){collect(i);return}
+    if(flatDist(pos,collectibles[i].position)<3){collect(i);return}
   }
 
   if(pos.distanceTo(theMan.position)<16){
@@ -563,18 +565,31 @@ function collect(i){
 // Ground-plane distance so hover bob / flight height don't block pickup.
 function flatDist(a,b){const dx=a.x-b.x,dz=a.z-b.z;return Math.sqrt(dx*dx+dz*dz)}
 
+// Distance on the ground plane from point p to segment a→b (catches fast moves that skip over an item).
+function segDistXZ(p,a,b){
+  const abx=b.x-a.x,abz=b.z-a.z,l2=abx*abx+abz*abz;
+  if(!(l2>1e-6))return flatDist(p,b);
+  let t=((p.x-a.x)*abx+(p.z-a.z)*abz)/l2;t=Math.max(0,Math.min(1,t));
+  const dx=p.x-(a.x+abx*t),dz=p.z-(a.z+abz*t);return Math.sqrt(dx*dx+dz*dz);
+}
+
 function autoPickup(time){
-  if(isFlying)return;
+  if(!player)return;
+  // Low flight still picks up; only skip when high in the air.
+  const canGrab=!isFlying||player.position.y<AUTO_PICKUP_MAX_ALT;
+  const from=Number.isNaN(lastPickupPos.x)?player.position:lastPickupPos;
   for(let i=collectibles.length-1;i>=0;i--){
     const c=collectibles[i];
     const d=flatDist(player.position,c.position);
     if(!c.userData.baseScale)c.userData.baseScale=c.scale.clone();
-    if(d<AUTO_PICKUP_RANGE){collect(i);continue}
+    if(canGrab&&(d<AUTO_PICKUP_RANGE||segDistXZ(c.position,from,player.position)<AUTO_PICKUP_RANGE)){collect(i);continue}
     // subtle pulse on items close enough to grab
     const k=d<PICKUP_PULSE_RANGE?1+Math.sin(time*8+c.userData.phase)*0.12:1;
     c.scale.copy(c.userData.baseScale).multiplyScalar(k);
   }
+  lastPickupPos.copy(player.position);
 }
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},autoPickup};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -976,8 +991,9 @@ function animate(){
     player.position.z=controls.getObject().position.z;
     player.position.y=isFlying?controls.getObject().position.y-1.5:0;
     if(playerMesh)playerMesh.visible=!isLocked || isFlying;
-    autoPickup(time);
   }else if(playerMesh)playerMesh.visible=true;
+  // Run pickup every frame once the game starts, not only while pointer-locked.
+  if(gameStarted&&!dialogueOpen)autoPickup(time);
 
   installations.forEach(obj=>{
     if(obj.userData.float){obj.position.y=obj.userData.baseY+Math.sin(time*1.2+obj.userData.phase)*0.7;obj.rotation.y+=0.008}
@@ -1083,6 +1099,7 @@ document.getElementById('start-btn').addEventListener('click',()=>{
     document.getElementById('title-screen').style.display='none';
     document.getElementById('ui').style.display='flex';
     createPlayerMesh(selectedChar);
+    gameStarted=true;
     showToast(`Welcome as ${selectedChar.toUpperCase()}! Collect items, build ZPEGs, unlock flight & defend The Man.`);
   },750);
 });
