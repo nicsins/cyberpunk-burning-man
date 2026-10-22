@@ -23,6 +23,7 @@ let phaseUnlocked={drone:false,defend:false,burn:false};
 let labels=[];
 const AMMO_MAX=12,AMMO_REGEN_SEC=8;
 let ammo=AMMO_MAX,ammoRegenTimer=0;
+let hasGun=false,gunPickup=null;
 const AUTO_PICKUP_RANGE=2.0,PICKUP_PULSE_RANGE=4,AUTO_PICKUP_MAX_ALT=4;
 let gameStarted=false;
 const lastPickupPos=new THREE.Vector3(NaN,0,NaN);
@@ -275,6 +276,16 @@ async function init(){
   document.getElementById('img-panda').src = assetUrl('panda_hd.png');
 
   // Player
+  // Plasma Rifle pickup a few steps from spawn (walk over it or press E)
+  {
+    const g=new THREE.Group();
+    const body=new THREE.Mesh(new THREE.BoxGeometry(1.4,0.22,0.22),new THREE.MeshStandardMaterial({color:0x222233,emissive:0xff5500,emissiveIntensity:1.6,metalness:0.7,roughness:0.3}));
+    const barrel=new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,0.7,8),new THREE.MeshBasicMaterial({color:0xffaa00}));
+    barrel.rotation.z=Math.PI/2;barrel.position.x=0.95;g.add(body,barrel);
+    const beam=new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,8,16,1,true),new THREE.MeshBasicMaterial({color:0xffaa00,transparent:true,opacity:0.15,side:THREE.DoubleSide,depthWrite:false,blending:THREE.AdditiveBlending}));
+    beam.position.y=3.3;g.add(beam);
+    g.position.set(3,1,21);scene.add(g);gunPickup=g;
+  }
   player=new THREE.Group();player.position.set(0,0,26);scene.add(player);
   createPlayerMesh('dragon');
 
@@ -416,7 +427,7 @@ function onMouseDown(e){
     return;
   }
   if(e.button===0 && isLocked && !dialogueOpen && !panelOpen){
-    if(gamePhase==='drone'||gamePhase==='defend') attackNearest();
+    if(hasGun||gamePhase==='drone'||gamePhase==='defend') attackNearest();
   }
 }
 
@@ -478,6 +489,7 @@ function spawnFrostBreath(){
 
 function attackNearest(){
   if(attackCooldown>0)return;
+  if(!hasGun){showToast('🔫 No weapon — grab the Plasma Rifle (orange beam) near spawn');return}
   if(ammo<=0){showToast(`Out of ammo — +1 round every ${AMMO_REGEN_SEC}s`);return}
   attackCooldown=0.45;
   ammo--;ammoRegenTimer=0;updateAmmoHud();
@@ -540,6 +552,8 @@ function interact(){
       updateUI();return;
     }
   }
+
+  if(gunPickup&&!hasGun&&flatDist(pos,gunPickup.position)<3){takeGun();return}
 
   // Collectibles (keypress fallback for items just outside auto-pickup range)
   for(let i=collectibles.length-1;i>=0;i--){
@@ -629,9 +643,16 @@ function autoPickup(time){
     const k=d<PICKUP_PULSE_RANGE?1+Math.sin(time*8+c.userData.phase)*0.12:1;
     c.scale.copy(c.userData.baseScale).multiplyScalar(k);
   }
+  if(gunPickup&&!hasGun&&flatDist(player.position,gunPickup.position)<AUTO_PICKUP_RANGE)takeGun();
+  if(gunPickup&&!hasGun)gunPickup.rotation.y=time*1.5;
   lastPickupPos.copy(player.position);
 }
-window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},autoPickup};
+function takeGun(){
+  hasGun=true;ammo=AMMO_MAX;updateAmmoHud();
+  if(gunPickup){scene.remove(gunPickup);gunPickup=null}
+  showToast(`🔫 Plasma Rifle! Left-click to fire (${AMMO_MAX} rounds, +1 every ${AMMO_REGEN_SEC}s)`);
+}
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get ammo(){return ammo},autoPickup};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -640,6 +661,7 @@ function tryCompleteQuest(npc){
   for(const[k,v]of Object.entries(q.need))inventory[k]-=v;
   tokens+=q.reward.tokens||0;
   if(q.reward.items)for(const[k,v]of Object.entries(q.reward.items))inventory[k]=(inventory[k]||0)+v;
+  if(q.reward.items?.['weapon-shard']&&!hasGun)takeGun();
   q.done=true;questsDone++;
   const qq=quests.find(x=>x.id===q.id);if(qq)qq.status='done';
   showToast(`✅ Quest complete! +${q.reward.tokens||0} tokens`);
@@ -683,6 +705,7 @@ function checkPhaseUnlocks(){
 
 // Current phase goal: x402 Broker (collect), nearest rogue drone (drone), The Man (defend/burn).
 function currentObjective(){
+  if(!hasGun&&gunPickup)return {pos:gunPickup.position,label:'Plasma Rifle'};
   if(gamePhase==='collect'){const b=npcs.find(n=>n.userData.name==='x402 Broker');return b?{pos:b.position,label:'x402 Broker'}:null}
   if(gamePhase==='drone'){
     let best=null,bd=Infinity;
