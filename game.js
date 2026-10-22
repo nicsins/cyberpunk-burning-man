@@ -46,7 +46,11 @@ const ITEM_DEFS={
   'creator-seed':{name:'Creator Seed',emoji:'🧬',tex:'item_creator'},
   'weapon-shard':{name:'Plasma Rifle Shard',emoji:'🔫'},
   'frost-core':{name:'Frost Core',emoji:'❄️'},
-  'suppress-kit':{name:'Suppress Kit',emoji:'🚁'}
+  'suppress-kit':{name:'Suppress Kit',emoji:'🚁'},
+  'bomb':{name:'Bomb',emoji:'💣'},
+  'extinguisher':{name:'Fire Extinguisher',emoji:'🧯'},
+  'scanner':{name:'Scanner',emoji:'📡'},
+  'ff-drone':{name:'Firefighter Drone',emoji:'🚒'}
 };
 
 const NPC_DATA=[
@@ -297,6 +301,7 @@ async function init(){
     pad.rotation.x=-Math.PI/2;pad.position.set(-5,0.05,21);scene.add(pad);
     g.position.set(-5,0.9,21);g.userData.home=g.position.clone();scene.add(g);rideDrone=g;
   }
+  spawnWorldPickups();renderForgeUI();
   player=new THREE.Group();player.position.set(0,0,26);scene.add(player);
   createPlayerMesh('dragon');
 
@@ -343,6 +348,7 @@ async function init(){
   document.addEventListener('keydown',onKeyDown);
   document.addEventListener('keyup',onKeyUp);
   document.addEventListener('mousedown',onMouseDown);
+  document.addEventListener('contextmenu',e=>{if(gameStarted)e.preventDefault()});
   // Wheel = forward/back impulse; middle-drag = strafe
   document.addEventListener('wheel',onWheel,{passive:false});
   document.addEventListener('mouseup',onMouseUp);
@@ -385,6 +391,8 @@ function onKeyDown(e){
     case 'KeyE':interact();break;
     case 'KeyF':toggleFlight();break;
     case 'KeyR':useSpecialAbility();break;
+    case 'KeyG':if(gameStarted)throwBomb();break;
+    case 'KeyX':if(gameStarted)sprayFoam();break;
     case 'Digit1':createPlayerMesh('dragon');showToast('🐉 DRAGON — F to fly · R frost breath');break;
     case 'Digit2':createPlayerMesh('panda');showToast('🐼 PANDA — craft suppress drones · ride Dragon');break;
     case 'KeyI':case 'Tab':e.preventDefault();togglePanel();break;
@@ -419,6 +427,7 @@ function onMouseUp(e){
   if(e.button===3||e.button===4)e.preventDefault();
 }
 function onMouseDown(e){
+  if(e.button===2&&gameStarted){sprayFoam();return}
   if(e.button===1&&gameStarted){
     e.preventDefault(); // no autoscroll
     middleHeld=true;
@@ -669,6 +678,7 @@ function autoPickup(time){
   }
   if(gunPickup&&!hasGun&&flatDist(player.position,gunPickup.position)<AUTO_PICKUP_RANGE)takeGun();
   if(gunPickup&&!hasGun)gunPickup.rotation.y=time*1.5;
+  tickWorldPickups(time);
   lastPickupPos.copy(player.position);
 }
 function takeGun(){
@@ -676,7 +686,7 @@ function takeGun(){
   if(gunPickup){scene.remove(gunPickup);gunPickup=null}
   showToast(`🔫 Plasma Rifle! Left-click to fire (${AMMO_MAX} rounds, +1 every ${AMMO_REGEN_SEC}s)`);
 }
-window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup};
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -1067,6 +1077,104 @@ function resolveCollisions(pos){
   }
 }
 
+
+// ---- Pickups (ammo crates, bombs) + forge (extinguisher, scanner) ----
+const _hintAt={};function hint(k,msg,cool=20){const n=performance.now();if(_hintAt[k]&&n-_hintAt[k]<cool*1000)return;_hintAt[k]=n;showToast(msg)}
+let ffDrone=null;
+let ammoPickups=[],bombPickups=[],bombsLive=[],extCharges=0,hasScanner=false;
+const BOMB_RADIUS=8,BOMB_DMG=60;
+function spawnWorldPickups(){
+  const mk=(color,geo)=>new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x111111,emissive:color,emissiveIntensity:1.5,metalness:0.6,roughness:0.3}));
+  for(let i=0;i<16;i++){
+    const m=mk(0xffaa00,new THREE.BoxGeometry(0.6,0.4,0.4));
+    const a=Math.random()*Math.PI*2,r=12+Math.random()*70;m.position.set(Math.cos(a)*r,0.5,Math.sin(a)*r);
+    scene.add(m);ammoPickups.push(m);
+  }
+  for(let i=0;i<8;i++){
+    const m=mk(0xff2244,new THREE.SphereGeometry(0.35,12,10));
+    const a=Math.random()*Math.PI*2,r=12+Math.random()*70;m.position.set(Math.cos(a)*r,0.5,Math.sin(a)*r);
+    scene.add(m);bombPickups.push(m);
+  }
+  // one of each right by spawn so players learn them
+  ammoPickups[0].position.set(1,0.5,19);bombPickups[0].position.set(-1.5,0.5,18.5);
+}
+function tickWorldPickups(time){
+  if(!player)return;
+  for(let i=ammoPickups.length-1;i>=0;i--){
+    const m=ammoPickups[i];m.rotation.y=time*2;
+    if(flatDist(player.position,m.position)<AUTO_PICKUP_RANGE&&ammo<AMMO_MAX){
+      ammo=Math.min(AMMO_MAX,ammo+6);updateAmmoHud();scene.remove(m);ammoPickups.splice(i,1);showToast('📦 Ammo +6');
+    }
+  }
+  for(let i=bombPickups.length-1;i>=0;i--){
+    const m=bombPickups[i];m.position.y=0.5+Math.sin(time*3+i)*0.1;
+    if(flatDist(player.position,m.position)<AUTO_PICKUP_RANGE){
+      inventory.bomb=(inventory.bomb||0)+1;scene.remove(m);bombPickups.splice(i,1);
+      showToast(`💣 Bomb picked up (${inventory.bomb}) — G to throw`);updateUI();
+    }
+  }
+}
+function throwBomb(){
+  if((inventory.bomb||0)<1){hint('nobomb','💣 No bombs — red orbs on the playa (see minimap)');return}
+  inventory.bomb--;updateUI();
+  const m=new THREE.Mesh(new THREE.SphereGeometry(0.3,10,8),new THREE.MeshBasicMaterial({color:0xff2244}));
+  const o=controls.getObject().position,dir=new THREE.Vector3();camera.getWorldDirection(dir);
+  m.position.copy(o).addScaledVector(dir,1);
+  m.userData.v=dir.multiplyScalar(18).add(new THREE.Vector3(0,5,0));m.userData.t=0;
+  scene.add(m);bombsLive.push(m);
+}
+function explodeAt(p){
+  const fx=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),new THREE.MeshBasicMaterial({color:0xff6600,transparent:true,opacity:0.7,blending:THREE.AdditiveBlending,depthWrite:false}));
+  fx.position.copy(p);scene.add(fx);let k=0;const iv=setInterval(()=>{k++;fx.scale.setScalar(1+k*0.8);fx.material.opacity=0.7-k*0.07;if(k>=10){clearInterval(iv);scene.remove(fx)}},30);
+  let hits=0;
+  for(let i=rogueDrones.length-1;i>=0;i--){const d=rogueDrones[i];if(d.position.distanceTo(p)<BOMB_RADIUS){d.userData.hp=(d.userData.hp||30)-BOMB_DMG;if(d.userData.hp<=0){scene.remove(d);rogueDrones.splice(i,1);tokens+=8;hits++}}}
+  for(let i=enemyNpcs.length-1;i>=0;i--){const e=enemyNpcs[i];if(e.position.distanceTo(p)<BOMB_RADIUS){e.userData.hp=(e.userData.hp||40)-BOMB_DMG;if(e.userData.hp<=0){scene.remove(e);enemyNpcs.splice(i,1);tokens+=15;hits++}}}
+  showToast(hits?`💥 Boom! ${hits} down`:'💥 Boom!');
+  if(gamePhase==='drone')checkDroneWave();if(gamePhase==='defend')checkDefendWin();updateUI();
+}
+function tickBombs(delta){
+  for(let i=bombsLive.length-1;i>=0;i--){
+    const b=bombsLive[i];b.userData.t+=delta;b.userData.v.y-=18*delta;b.position.addScaledVector(b.userData.v,delta);
+    if(b.position.y<=0.3||b.userData.t>2.5){scene.remove(b);bombsLive.splice(i,1);explodeAt(b.position)}
+  }
+}
+function sprayFoam(){
+  if(!(droneBoarded&&rideDrone===ffDrone)&&extCharges<=0){
+    hint('noext','🧯 No extinguisher — forge one in Ω Panel (I) → Forge');return;
+  }
+  const o=controls.getObject().position,dir=new THREE.Vector3();camera.getWorldDirection(dir);dir.y=0;dir.normalize();
+  let out=0;
+  for(let i=fires.length-1;i>=0;i--){
+    const f=fires[i],to=f.position.clone().sub(o);to.y=0;const d=to.length();
+    if(d<8&&(d<2.5||to.normalize().dot(dir)>0.3)){scene.remove(f);fires.splice(i,1);out++;manIntegrity=Math.min(100,manIntegrity+4)}
+  }
+  if(!(droneBoarded&&rideDrone===ffDrone))extCharges--;
+  showToast(out?`🧯 Foam! ${out} fire${out>1?'s':''} out`:'🧯 Foam sprayed — aim at a fire within 8m');
+  if(gamePhase==='defend')checkDefendWin();updateUI();
+}
+const FORGE=[
+  {id:'extinguisher',label:'🧯 Fire Extinguisher',desc:'8 foam blasts (X). Cost: Plasma Vial or 25 tokens',items:{'plasma-vial':1},tokens:25},
+  {id:'scanner',label:'📡 Scanner',desc:'Shows enemies on the minimap. Cost: Circuit Board + Neon Shard or 40 tokens',items:{'circuit-board':1,'neon-shard':1},tokens:40},
+];
+function forge(id){
+  const r=FORGE.find(f=>f.id===id);if(!r)return;
+  const hasItems=Object.entries(r.items).every(([k,v])=>(inventory[k]||0)>=v);
+  if(hasItems)for(const[k,v]of Object.entries(r.items))inventory[k]-=v;
+  else if(tokens>=r.tokens)tokens-=r.tokens;
+  else{showToast(`Need ${Object.keys(r.items).map(k=>ITEM_DEFS[k]?.name||k).join(' + ')} or ${r.tokens} tokens`);return}
+  if(id==='extinguisher'){extCharges+=8;inventory.extinguisher=1;showToast('🧯 Extinguisher forged — X to spray foam')}
+  if(id==='scanner'){hasScanner=true;inventory.scanner=1;showToast('📡 Scanner forged — enemies now show on the minimap')}
+  if(r.onForge)r.onForge();
+  updateUI();
+}
+window.forgeItem=forge;
+function renderForgeUI(){
+  const tab=document.getElementById('tab-omega');if(!tab)return;
+  let box=document.getElementById('forge-box');
+  if(!box){box=document.createElement('div');box.id='forge-box';tab.appendChild(box)}
+  box.innerHTML='<h3 style="margin-top:8px">🔨 Forge</h3>'+FORGE.map(f=>`<button class="station-btn" onclick="forgeItem('${f.id}')">${f.label}<small>${f.desc}</small></button>`).join('');
+}
+
 function animateWalkCycle(spr,time,isDrone){
   const ud=spr.userData;
   if(!ud.baseScale)ud.baseScale=spr.scale.clone();
@@ -1087,6 +1195,7 @@ function animate(){
   if(frostCooldown>0)frostCooldown-=delta;
   if(attackCooldown>0)attackCooldown-=delta;
   tickAmmoRegen(delta);
+  tickBombs(delta);
 
   if(isLocked&&!dialogueOpen&&!panelOpen){
     // Friction: firm on foot, glidey in the air so flight has momentum.
