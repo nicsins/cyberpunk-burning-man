@@ -393,6 +393,9 @@ function onKeyDown(e){
       break;
     case 'KeyC':case 'ControlLeft':case 'ControlRight':case 'KeyQ':if(isFlying){flyDown=true;e.preventDefault()}break;
     case 'KeyK':if(tut&&document.getElementById('tut-skip').style.display!=='none')endTutorial(true);break;
+    case 'KeyT':if(gameStarted)toggleTargeting();break;
+    case 'KeyY':if(gameStarted)toggleAutoFire();break;
+    case 'KeyV':if(targeting&&!fireRocket())showToast('No lock yet — hold the target in the reticle');break;
     case 'KeyE':interact();break;
     case 'KeyF':toggleFlight();break;
     case 'KeyR':useSpecialAbility();break;
@@ -460,6 +463,7 @@ function onMouseDown(e){
     return;
   }
   if(e.button===0 && isLocked && !dialogueOpen && !panelOpen){
+    if(targeting&&lockP>=1&&fireRocket())return;
     if(hasGun||gamePhase==='drone'||gamePhase==='defend') attackNearest();
   }
 }
@@ -889,7 +893,7 @@ function checkDroneWave(){
   if(tut)return; // training drone kill must not trigger waves
   if(droneMode&&rogueDrones.length===0){
     const bonus=droneModeWave*250;dmScore+=bonus;if(dmScore>dmBest){dmBest=dmScore;localStorage.setItem('cbm_drone_best',dmBest)}
-    droneModeWave++;tokens+=20;inventory.bomb=(inventory.bomb||0)+1;ammo=AMMO_MAX;updateAmmoHud();dropWaveLoot();updateScoreHud();
+    droneModeWave++;tokens+=20;rockets=ROCKET_MAX;updateRocketHud();inventory.bomb=(inventory.bomb||0)+1;ammo=AMMO_MAX;updateAmmoHud();dropWaveLoot();updateScoreHud();
     showPhaseBanner(`DRONE MODE — wave ${droneModeWave} (+${bonus} wave bonus, +1 bomb, ammo refilled, loot dropped)`);
     setTimeout(()=>{spawnRogueDrones(4+droneModeWave*2);if(droneModeWave%5===0)spawnBossDrone()},2500);updateUI();return;
   }
@@ -1446,7 +1450,57 @@ function tickTutorial(dt){
   else if(k==='hit'&&tut.target&&tut.target.userData.hp<40)tutAdvance();
   else if(k==='kill'&&tut.target&&!rogueDrones.includes(tut.target)){tut.target=null;tutAdvance()}
 }
-window.__cbm2={get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
+// ---- Mini rockets + lock-on: T targeting, Y auto/manual, V or click fires when locked ----
+const ROCKET_MAX=6,LOCK_TIME=1.2;let rockets=ROCKET_MAX,targeting=false,autoFire=localStorage.getItem('cbm_autofire')!=='0',lockT=null,lockP=0,rocketsLive=[];
+function ensureLockHud(){
+  let el=document.getElementById('lock-hud');if(el)return el;
+  el=document.createElement('div');el.id='lock-hud';el.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:55;display:none;font:700 12px monospace;color:#0f8';
+  el.innerHTML='<div style="position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(0,255,120,.06) 0 2px,transparent 2px 4px);border:3px solid rgba(0,255,120,.35)"></div>'+
+   '<div id="lk-x" style="position:absolute;height:3px;width:90px;background:#f33;box-shadow:0 0 8px #f33"></div><div id="lk-y" style="position:absolute;width:3px;height:90px;background:#3f3;box-shadow:0 0 8px #3f3"></div><div id="lk-z" style="position:absolute;width:70px;height:70px;border:3px solid #39f;border-radius:50%;box-shadow:0 0 8px #39f"></div>'+
+   '<div id="lk-box" style="position:absolute;width:56px;height:56px;border:2px dashed #0f8"></div>'+
+   '<div id="lk-txt" style="position:absolute;left:50%;top:14%;transform:translateX(-50%);font-size:18px;text-shadow:0 0 6px #0f8;letter-spacing:3px"></div>'+
+   '<div style="position:absolute;left:24px;bottom:120px;line-height:1.5">TGT SYS v0.9 ▮ <span id="lk-mode"></span><br>ROCKETS <span id="lk-ammo"></span><br><span style="opacity:.6">T exit · Y auto/manual · V fire</span></div>';
+  document.body.appendChild(el);return el;
+}
+function updateRocketHud(){ensureHudBox('rockets','ROCKETS','#ff8844').textContent=`${rockets}/${ROCKET_MAX} ${autoFire?'AUTO':'MAN'}`}
+function toggleTargeting(){targeting=!targeting;lockT=null;lockP=0;ensureLockHud().style.display=targeting?'block':'none';updateRocketHud();if(targeting)hint('tgt',`🎯 Targeting ON — keep an enemy near the crosshair to lock (${autoFire?'auto':'manual: V/click'} fire)`,10)}
+function toggleAutoFire(){autoFire=!autoFire;localStorage.setItem('cbm_autofire',autoFire?'1':'0');updateRocketHud();showToast(`🚀 Rocket fire: ${autoFire?'AUTO on lock':'MANUAL (V / click when locked)'}`)}
+function pickLockTarget(){
+  const p=camera.getWorldPosition(new THREE.Vector3()),dir=new THREE.Vector3();camera.getWorldDirection(dir);let best=null,bd=0.93;
+  for(const t of rogueDrones.concat(enemyNpcs)){const to=t.position.clone().sub(p),d=to.length();if(d>70)continue;const dot=to.normalize().dot(dir);if(dot>bd){bd=dot;best=t}}
+  return best;
+}
+function fireRocket(){
+  if(!lockT||lockP<1)return false;
+  if(rockets<=0){hint('norock','🚀 Out of rockets — clear a wave or grab ammo crates to reload',8);return true}
+  rockets--;updateRocketHud();SFX.shot();
+  const m=new THREE.Mesh(new THREE.ConeGeometry(0.12,0.6,6),new THREE.MeshBasicMaterial({color:0xffaa33}));
+  m.position.copy(camera.getWorldPosition(new THREE.Vector3())).add(new THREE.Vector3(0,-0.5,0));m.userData={tgt:lockT,life:4};scene.add(m);rocketsLive.push(m);
+  lockP=0;lockT=null;return true;
+}
+function tickRockets(dt){
+  if(targeting){
+    const el=ensureLockHud(),t=pickLockTarget();
+    if(t!==lockT){lockT=t;lockP=0}
+    if(lockT)lockP=Math.min(1,lockP+dt/LOCK_TIME);
+    const W=innerWidth,H=innerHeight;let sx=W/2,sy=H/2;
+    if(lockT){const v=lockT.position.clone().project(camera);sx=(v.x+1)/2*W;sy=(1-v.y)/2*H}
+    const off=(1-lockP)*220,j=lockP<1?Math.sin(performance.now()/40)*6*(1-lockP):0;
+    const X=el.querySelector('#lk-x'),Y=el.querySelector('#lk-y'),Z=el.querySelector('#lk-z'),B=el.querySelector('#lk-box');
+    X.style.left=(sx-45-off+j)+'px';X.style.top=(sy-1)+'px';Y.style.left=(sx-1)+'px';Y.style.top=(sy-45+off-j)+'px';
+    const zs=70+off;Z.style.width=Z.style.height=zs+'px';Z.style.left=(sx-zs/2)+'px';Z.style.top=(sy-zs/2)+'px';
+    B.style.left=(sx-28)+'px';B.style.top=(sy-28)+'px';B.style.borderColor=lockP>=1?'#f33':'#0f8';B.style.display=lockT?'block':'none';
+    const locked=lockT&&lockP>=1;
+    el.querySelector('#lk-txt').textContent=!lockT?'SCANNING…':locked?'◆ LOCKED ◆':`ACQUIRING SIGNATURE ${Math.round(lockP*100)}%  X${(off/22).toFixed(1)} Y${(off/31).toFixed(1)} Z${(off/17).toFixed(1)}`;
+    el.querySelector('#lk-txt').style.color=locked?'#f33':'#0f8';el.querySelector('#lk-mode').textContent=autoFire?'AUTO':'MANUAL';el.querySelector('#lk-ammo').textContent='▮'.repeat(rockets)+'▯'.repeat(ROCKET_MAX-rockets);
+    if(locked&&autoFire&&rockets>0)fireRocket();
+  }
+  for(let i=rocketsLive.length-1;i>=0;i--){const m=rocketsLive[i],t=m.userData.tgt;m.userData.life-=dt;
+    const alive=t&&(rogueDrones.includes(t)||enemyNpcs.includes(t));const dest=alive?t.position:m.position.clone().add(new THREE.Vector3(0,-1,0));
+    const to=dest.clone().sub(m.position),d=to.length();m.position.add(to.normalize().multiplyScalar(Math.min(d,38*dt)));m.lookAt(dest);m.rotateX(Math.PI/2);
+    if(d<1||m.userData.life<=0||!alive){if(alive){t.userData.hp-=40;onHit(t,40,m.position)}explodeAt(m.position.clone());scene.remove(m);rocketsLive.splice(i,1)}}
+}
+window.__cbm2={get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
 function onHit(e,dmg,from,kb=0.8){
   const ud=e.userData;
   if(!ud.baseColor)ud.baseColor=e.material.color.clone();
@@ -1541,7 +1595,7 @@ function animate(){
   if(attackCooldown>0)attackCooldown-=delta;
   tickAmmoRegen(delta);
   tickBombs(delta);
-  tickFFDrone(delta,time);tickTutorial(delta);
+  tickFFDrone(delta,time);tickTutorial(delta);tickRockets(delta);
   tickDying(delta);tickCombo(delta);SFX.setHum(droneBoarded);SFX.tick();tickHitFlash(rawDelta);tickDmgNums(rawDelta);
   drawMinimap();
 
