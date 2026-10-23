@@ -887,8 +887,8 @@ function startDroneMode(){
   droneMode=true;droneModeWave=1;dmScore=0;dmCombo=1;dmComboT=0;
   takeGun();inventory.bomb=(inventory.bomb||0)+3;
   phaseUnlocked.drone=true;setPhase('drone');
-  if(padDrone){rideDrone=padDrone;boardDrone()}
   controls.getObject().position.y=8;
+  if(padDrone){rideDrone=padDrone;boardDrone()}
   if(tut)tut.onDone=()=>{spawnRogueDrones(6);updateScoreHud()};else spawnRogueDrones(6);updateScoreHud();
   showPhaseBanner('DRONE MODE — wave 1 · Click fire · G bomb · Space up · C/Ctrl/Q down · WASD/wheel fly');
 }
@@ -1436,7 +1436,7 @@ function renderTut(){
   document.getElementById('tut-prog').textContent=`step ${tut.i+1}/${TUT_STEPS.length}`;
   document.getElementById('tut-skip').style.display=(tut.i>=TUT_BASICS||localStorage.getItem('cbm_drone_tut_seen'))?'inline-block':'none';
 }
-function tutAdvance(){tut.i++;tut.acc=0;tut.y0=controls.getObject().position.y;SFX.chime();
+function tutAdvance(){tut.i++;tut.acc=0;tut.lo=tut.hi=null;tut.y0=controls.getObject().position.y;SFX.chime();
   if(tut.i===7&&!tut.target){spawnRogueDrones(1);tut.target=rogueDrones[rogueDrones.length-1];Object.assign(tut.target.userData,{tut:true,hp:40,speed:0,fireT:1e9});const p=controls.getObject().position,d=new THREE.Vector3();camera.getWorldDirection(d);d.y=0;d.normalize();tut.target.position.set(p.x+d.x*7,p.y,p.z+d.z*7);tut.target.userData.baseY=p.y}
   if(tut.i>=TUT_STEPS.length){endTutorial(false);return}renderTut()}
 function endTutorial(skipped){
@@ -1448,7 +1448,8 @@ function endTutorial(skipped){
 function tickTutorial(dt){
   if(!tut||!droneBoarded)return;const k=TUT_STEPS[tut.i].k,y=controls.getObject().position.y;
   const held={left:moveLeft&&!moveRight,right:moveRight&&!moveLeft,fwd:moveForward||velocity.z<-6,back:moveBackward||velocity.z>6,diag:(moveForward||moveBackward)&&(moveLeft||moveRight)}[k];
-  if(k==='up'&&y>tut.y0+3)tutAdvance();else if(k==='down'&&y<tut.y0-2.5)tutAdvance();
+  tut.lo=Math.min(tut.lo??y,y);tut.hi=Math.max(tut.hi??y,y);
+  if(k==='up'&&y>tut.lo+3)tutAdvance();else if(k==='down'&&y<tut.hi-2.5)tutAdvance();
   else if(held!==undefined){if(held){tut.acc+=dt;if(tut.acc>0.6)tutAdvance()}}
   else if(k==='hit'&&tut.target&&tut.target.userData.hp<40)tutAdvance();
   else if(k==='kill'&&tut.target&&!rogueDrones.includes(tut.target)){tut.target=null;tutAdvance()}
