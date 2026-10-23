@@ -388,9 +388,10 @@ function onKeyDown(e){
     case 'KeyA':case 'ArrowLeft':moveLeft=true;break;
     case 'KeyD':case 'ArrowRight':moveRight=true;break;
     case 'Space':
-      if(isFlying){velocity.y+=4}
+      if(isFlying){flyUp=true;e.preventDefault()}
       else if(canJump){velocity.y+=7.8;canJump=false}
       break;
+    case 'KeyC':case 'ControlLeft':case 'ControlRight':case 'KeyQ':if(isFlying){flyDown=true;e.preventDefault()}break;
     case 'KeyE':interact();break;
     case 'KeyF':toggleFlight();break;
     case 'KeyR':useSpecialAbility();break;
@@ -410,8 +411,14 @@ function onKeyUp(e){
     case 'KeyS':case 'ArrowDown':moveBackward=false;break;
     case 'KeyA':case 'ArrowLeft':moveLeft=false;break;
     case 'KeyD':case 'ArrowRight':moveRight=false;break;
+    case 'Space':flyUp=false;break;
+    case 'KeyC':case 'ControlLeft':case 'ControlRight':case 'KeyQ':flyDown=false;break;
   }
 }
+// Vertical axis while flying: Space up, C/Ctrl/Q down. Clamped to ALT_MIN..ALT_MAX.
+const ALT_MIN=2,ALT_MAX=40,HULL_MAX=100;let flyUp=false,flyDown=false,droneHull=HULL_MAX;
+function updateHullHud(){const el=ensureHudBox('hull','HULL','#66ffcc');el.textContent=droneBoarded?Math.max(0,Math.round(droneHull))+'%':'—'}
+function damageHull(n){if(!droneBoarded)return;droneHull-=n;shake(0.15);updateHullHud();if(droneHull<=0){droneHull=HULL_MAX;exitDrone(true);showPhaseBanner('💥 SHOT DOWN — drone crashed. You\'re on foot now: E on the drone to re-board (hull repaired)');SFX.boom()}}
 let middleHeld=false,savedPointerSpeed=1;
 function mouseMoveAllowed(){return gameStarted&&!dialogueOpen&&!panelOpen}
 function onWheel(e){
@@ -469,7 +476,7 @@ function toggleFlight(){
   }
   isFlying=!isFlying;
   if(isFlying){
-    showToast('🐉 Flight engaged — Space climb · WASD strafe · R frost');
+    showToast('🐉 Flight engaged — Space up · C/Ctrl/Q down · WASD strafe · R frost');
     flyHeight=Math.max(controls.getObject().position.y,4);
   }else{
     showToast('Landed');
@@ -570,13 +577,13 @@ function deploySuppressDrone(){
 function boardDrone(){
   droneBoarded=true;droneEverBoarded=true;isFlying=true;
   flyHeight=Math.max(controls.getObject().position.y,4);
-  showToast('🛸 Drone boarded — Space climb · WASD/wheel move · F or E to land');
+  updateHullHud();showToast('🛸 Drone boarded — Space up · C/Ctrl/Q down · WASD/wheel move · F or E to land');
 }
-function exitDrone(){
-  droneBoarded=false;isFlying=false;controls.getObject().position.y=1.7;
+function exitDrone(crash){
+  droneBoarded=false;flyUp=flyDown=false;setTimeout(updateHullHud,0);isFlying=false;controls.getObject().position.y=1.7;
   if(rideDrone)rideDrone.position.set(player.position.x+2,0.9,player.position.z);
   if(rideDrone===ffDrone)rideDrone=padDrone;
-  showToast('Landed — drone parked next to you. E to board again.');
+  if(!crash)showToast('Landed — drone parked next to you. E to board again.');
 }
 function interact(){
   if(droneBoarded){exitDrone();return}
@@ -875,7 +882,7 @@ function startDroneMode(){
   if(padDrone){rideDrone=padDrone;boardDrone()}
   controls.getObject().position.y=8;
   spawnRogueDrones(6);updateScoreHud();
-  showPhaseBanner('DRONE MODE — wave 1 · Click fire · G bomb · Space climb · WASD/wheel fly');
+  showPhaseBanner('DRONE MODE — wave 1 · Click fire · G bomb · Space up · C/Ctrl/Q down · WASD/wheel fly');
 }
 function checkDroneWave(){
   if(droneMode&&rogueDrones.length===0){
@@ -1397,6 +1404,7 @@ function tickDmgNums(dt){
     d.el.style.display='block';d.el.style.left=((v.x+1)/2*innerWidth)+'px';d.el.style.top=((1-v.y)/2*innerHeight)+'px';d.el.style.opacity=String(1-d.t/0.9);
   }
 }
+window.__cbm2={get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
 function onHit(e,dmg,from,kb=0.8){
   const ud=e.userData;
   if(!ud.baseColor)ud.baseColor=e.material.color.clone();
@@ -1500,7 +1508,7 @@ function animate(){
     const fr=isFlying?2.5:8;
     velocity.x-=velocity.x*fr*delta;velocity.z-=velocity.z*fr*delta;
     if(!isFlying)velocity.y-=18.5*delta;
-    else velocity.y-=velocity.y*3*delta;
+    else{velocity.y-=velocity.y*3*delta;velocity.y+=(Number(flyUp)-Number(flyDown))*45*delta}
 
     direction.z=Number(moveForward)-Number(moveBackward);direction.x=Number(moveRight)-Number(moveLeft);direction.normalize();
     const speed=isFlying?40:60; // terminal ≈ speed/friction: ~7.5 u/s walking, ~16 u/s flying
@@ -1511,8 +1519,8 @@ function animate(){
 
     if(isFlying){
       controls.getObject().position.y+=velocity.y*delta;
-      if(controls.getObject().position.y<2){controls.getObject().position.y=2;velocity.y=0}
-      if(controls.getObject().position.y>40){controls.getObject().position.y=40;velocity.y=0}
+      if(controls.getObject().position.y<ALT_MIN){controls.getObject().position.y=ALT_MIN;velocity.y=Math.max(0,velocity.y)}
+      if(controls.getObject().position.y>ALT_MAX){controls.getObject().position.y=ALT_MAX;velocity.y=Math.min(0,velocity.y)}
     }else{
       controls.getObject().position.y+=velocity.y*delta;
       if(controls.getObject().position.y<1.7){velocity.y=0;controls.getObject().position.y=1.7;canJump=true}
@@ -1546,7 +1554,7 @@ function animate(){
     d.position.y=(d.userData.baseY||4)+Math.sin(time*2+d.userData.phase)*1.5;
     if(!tickAnim(d,delta))animateWalkCycle(d,time,true);
     const toPlayer=player.position.clone().sub(d.position);
-    if(d.userData.anim&&toPlayer.length()<25){d.userData.fireT-=delta;if(d.userData.fireT<=0){d.userData.fireT=2.5+Math.random()*3;setAnim(d,'fire',true)}}
+    if(d.userData.anim&&toPlayer.length()<25){d.userData.fireT-=delta;if(d.userData.fireT<=0){d.userData.fireT=2.5+Math.random()*3;setAnim(d,'fire',true);if(droneBoarded&&toPlayer.length()<20)damageHull(d.userData.isBoss?18:7)}}
     if(toPlayer.length()>3){
       toPlayer.normalize().multiplyScalar(d.userData.speed*60*delta);
       d.position.x+=toPlayer.x;d.position.z+=toPlayer.z;faceByMotion(d,toPlayer.x,toPlayer.z);
