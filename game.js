@@ -397,6 +397,7 @@ function onKeyDown(e){
     case 'KeyH':if(gameStarted)toggleRideFF();break;
     case 'KeyG':if(gameStarted)throwBomb();break;
     case 'KeyX':if(gameStarted)sprayFoam();break;
+    case 'KeyM':showToast(SFX.toggleMute()?'🔇 Sound muted (M)':'🔊 Sound on (M)');break;
     case 'Digit1':createPlayerMesh('dragon');showToast('🐉 DRAGON — F to fly · R frost breath');break;
     case 'Digit2':createPlayerMesh('panda');showToast('🐼 PANDA — craft suppress drones · ride Dragon');break;
     case 'KeyI':case 'Tab':e.preventDefault();togglePanel();break;
@@ -517,7 +518,7 @@ function attackNearest(){
   if(!hasGun){showToast('🔫 No weapon — grab the Plasma Rifle (orange beam) near spawn');return}
   if(ammo<=0){hint('lowammo','📦 Out of ammo — orange ammo crates on the minimap',15);showToast(`Out of ammo — +1 round every ${AMMO_REGEN_SEC}s`);return}
   attackCooldown=0.45;
-  ammo--;ammoRegenTimer=0;updateAmmoHud();
+  ammo--;ammoRegenTimer=0;updateAmmoHud();SFX.shot();
   if(ammo<=3)hint('lowammo',`📦 Low ammo (${ammo}) — grab orange ammo crates (minimap) or wait for regen`,30);
   damageInFront(8,22);
   showToast('⚡ Attack!');
@@ -649,7 +650,7 @@ function interact(){
 }
 
 function collect(i){
-  const c=collectibles[i];if(!c)return;
+  const c=collectibles[i];if(!c)return;SFX.chime();
   const key=c.userData.itemKey;
   inventory[key]=(inventory[key]||0)+1;
   scene.remove(c);collectibles.splice(i,1);
@@ -687,12 +688,12 @@ function autoPickup(time){
   tickWorldPickups(time);
   lastPickupPos.copy(player.position);
 }
-function takeGun(){
+function takeGun(){SFX.chime();
   hasGun=true;ammo=AMMO_MAX;updateAmmoHud();
   if(gunPickup){scene.remove(gunPickup);gunPickup=null}
   showToast(`🔫 Plasma Rifle! Left-click to fire (${AMMO_MAX} rounds, +1 every ${AMMO_REGEN_SEC}s)`);
 }
-window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,startDroneMode,get droneMode(){return droneMode},get rogueDrones(){return rogueDrones},toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup,get enemyNpcs(){return enemyNpcs},spawnArsonists:n=>spawnArsonists(n),spawnRogueDrones:n=>spawnRogueDrones(n),setPhase:p=>setPhase(p),damageInFront:(r,d)=>damageInFront(r,d),get dying(){return dyingSprites},get hitstop(){return hitstop},get shakeAmt(){return shakeAmt},explodeAt:p=>explodeAt(p)};
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,startDroneMode,get droneMode(){return droneMode},get rogueDrones(){return rogueDrones},toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup,get enemyNpcs(){return enemyNpcs},spawnArsonists:n=>spawnArsonists(n),spawnRogueDrones:n=>spawnRogueDrones(n),setPhase:p=>setPhase(p),damageInFront:(r,d)=>damageInFront(r,d),get dying(){return dyingSprites},get hitstop(){return hitstop},get shakeAmt(){return shakeAmt},explodeAt:p=>explodeAt(p),get SFX(){return SFX}};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -1132,13 +1133,13 @@ function tickWorldPickups(time){
   for(let i=ammoPickups.length-1;i>=0;i--){
     const m=ammoPickups[i];m.rotation.y=time*2;
     if(flatDist(player.position,m.position)<AUTO_PICKUP_RANGE&&ammo<AMMO_MAX){
-      ammo=Math.min(AMMO_MAX,ammo+6);updateAmmoHud();scene.remove(m);ammoPickups.splice(i,1);showToast('📦 Ammo +6');
+      ammo=Math.min(AMMO_MAX,ammo+6);updateAmmoHud();scene.remove(m);ammoPickups.splice(i,1);showToast('📦 Ammo +6');SFX.chime();
     }
   }
   for(let i=bombPickups.length-1;i>=0;i--){
     const m=bombPickups[i];m.position.y=0.5+Math.sin(time*3+i)*0.1;
     if(flatDist(player.position,m.position)<AUTO_PICKUP_RANGE){
-      inventory.bomb=(inventory.bomb||0)+1;scene.remove(m);bombPickups.splice(i,1);
+      inventory.bomb=(inventory.bomb||0)+1;scene.remove(m);bombPickups.splice(i,1);SFX.chime();
       showToast(`💣 Bomb picked up (${inventory.bomb}) — G to throw`);updateUI();
     }
   }
@@ -1155,7 +1156,7 @@ function throwBomb(){
 function explodeAt(p){
   const fx=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),new THREE.MeshBasicMaterial({color:0xff6600,transparent:true,opacity:0.7,blending:THREE.AdditiveBlending,depthWrite:false}));
   fx.position.copy(p);scene.add(fx);let k=0;const iv=setInterval(()=>{k++;fx.scale.setScalar(1+k*0.8);fx.material.opacity=0.7-k*0.07;if(k>=10){clearInterval(iv);scene.remove(fx)}},30);
-  let hits=0;shake(Math.max(0.08,0.5-camera.position.distanceTo(p)*0.012));
+  let hits=0;SFX.boom();shake(Math.max(0.08,0.5-camera.position.distanceTo(p)*0.012));
   for(let i=rogueDrones.length-1;i>=0;i--){const d=rogueDrones[i];if(d.position.distanceTo(p)<BOMB_RADIUS){d.userData.hp=(d.userData.hp||30)-BOMB_DMG;onHit(d,BOMB_DMG,p,2.5);if(d.userData.hp<=0){killSprite(d,'explode');rogueDrones.splice(i,1);tokens+=8;hits++}}}
   for(let i=enemyNpcs.length-1;i>=0;i--){const e=enemyNpcs[i];if(e.position.distanceTo(p)<BOMB_RADIUS){e.userData.hp=(e.userData.hp||40)-BOMB_DMG;onHit(e,BOMB_DMG,p,2.5);if(e.userData.hp<=0){killSprite(e,'death');enemyNpcs.splice(i,1);tokens+=15;hits++}}}
   showToast(hits?`💥 Boom! ${hits} down`:'💥 Boom!');
@@ -1171,6 +1172,7 @@ function sprayFoam(){
   if(!(droneBoarded&&rideDrone===ffDrone)&&extCharges<=0){
     hint('noext','🧯 No extinguisher — forge one in Ω Panel (I) → Forge');return;
   }
+  SFX.hiss();
   const o=controls.getObject().position,dir=new THREE.Vector3();camera.getWorldDirection(dir);dir.y=0;dir.normalize();
   let out=0;
   for(let i=fires.length-1;i>=0;i--){
@@ -1365,12 +1367,68 @@ function onHit(e,dmg,from,kb=0.8){
   spawnDmgNum(e.position,String(Math.round(dmg)),kill?'#ff3355':'#ffee66');
   flashHitmarker(kill);
   if(kill)hitstop=Math.max(hitstop,0.08);
+  SFX.hit(kill);
 }
 function tickHitFlash(dt){
   const all=rogueDrones.concat(enemyNpcs,dyingSprites);
   for(const e of all){const ud=e.userData;if(ud.flash>0){ud.flash-=dt;if(ud.flash<=0)e.material.color.copy(ud.baseColor)}}
 }
 function shake(a){shakeAmt=Math.max(shakeAmt,a)}
+
+
+// ---- Procedural audio (WebAudio, no samples): SFX + festival bass loop. M = mute ----
+const SFX=(()=>{
+  let ctx=null,master=null,sfxBus=null,musicBus=null,muted=localStorage.getItem('cbm_muted')==='1',hum=null,noiseBuf=null,nextBeat=0,step=0,musicOn=false;
+  function init(){
+    if(ctx)return ctx.state==='suspended'?ctx.resume():null;
+    const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+    ctx=new AC();master=ctx.createGain();master.gain.value=muted?0:0.7;master.connect(ctx.destination);
+    sfxBus=ctx.createGain();sfxBus.gain.value=0.8;sfxBus.connect(master);
+    musicBus=ctx.createGain();musicBus.gain.value=0.35;musicBus.connect(master);
+    noiseBuf=ctx.createBuffer(1,ctx.sampleRate,ctx.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  }
+  const ok=()=>ctx&&ctx.state==='running';
+  function env(g,t,a,peak,dec){g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(peak,t+a);g.gain.exponentialRampToValueAtTime(0.0001,t+a+dec)}
+  function tone(type,f0,f1,dur,vol,bus=sfxBus,t=ctx.currentTime){
+    const o=ctx.createOscillator(),g=ctx.createGain();o.type=type;o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(Math.max(20,f1),t+dur);
+    env(g,t,0.005,vol,dur);o.connect(g).connect(bus);o.start(t);o.stop(t+dur+0.05);
+  }
+  function noise(dur,vol,filt,fType='lowpass',bus=sfxBus,t=ctx.currentTime,f1){
+    const s=ctx.createBufferSource();s.buffer=noiseBuf;const f=ctx.createBiquadFilter();f.type=fType;f.frequency.setValueAtTime(filt,t);if(f1)f.frequency.exponentialRampToValueAtTime(f1,t+dur);
+    const g=ctx.createGain();env(g,t,0.005,vol,dur);s.connect(f).connect(g).connect(bus);s.start(t);s.stop(t+dur+0.05);
+  }
+  const api={
+    init,get muted(){return muted},
+    shot(){if(!ok())return;tone('sawtooth',1400,180,0.14,0.25);tone('square',700,90,0.1,0.12);noise(0.06,0.2,4000,'highpass')},
+    hit(kill){if(!ok())return;tone('square',kill?520:880,kill?140:600,kill?0.18:0.05,0.12)},
+    boom(){if(!ok())return;tone('sine',120,30,0.7,0.9);noise(0.9,0.7,1800,'lowpass',sfxBus,ctx.currentTime,120)},
+    hiss(){if(!ok())return;noise(0.5,0.35,3000,'bandpass',sfxBus,ctx.currentTime,6000)},
+    chime(){if(!ok())return;const t=ctx.currentTime;[880,1320,1760].forEach((f,i)=>tone('triangle',f,f,0.25,0.15,sfxBus,t+i*0.06))},
+    setHum(on){
+      if(!ok())return;
+      if(on&&!hum){const o=ctx.createOscillator(),o2=ctx.createOscillator(),g=ctx.createGain(),lfo=ctx.createOscillator(),lg=ctx.createGain();
+        o.type='sawtooth';o.frequency.value=92;o2.type='sawtooth';o2.frequency.value=93.5;lfo.frequency.value=17;lg.gain.value=0.03;
+        const f=ctx.createBiquadFilter();f.type='lowpass';f.frequency.value=600;g.gain.value=0.07;
+        lfo.connect(lg).connect(g.gain);o.connect(f);o2.connect(f);f.connect(g).connect(sfxBus);[o,o2,lfo].forEach(x=>x.start());hum={o,o2,lfo,g}}
+      else if(!on&&hum){const h=hum;hum=null;h.g.gain.setTargetAtTime(0,ctx.currentTime,0.1);setTimeout(()=>[h.o,h.o2,h.lfo].forEach(x=>x.stop()),400)}
+    },
+    // 124 BPM four-on-the-floor kick + offbeat hats + minor-key bassline (A minor: A, A, C, G)
+    music(on){musicOn=on;if(on&&ok()&&!nextBeat)nextBeat=ctx.currentTime+0.1},
+    tick(){
+      if(!ok()||!musicOn)return;const spb=60/124/2; // 8th notes
+      const bass=[55,55,0,55,65.4,0,49,55];
+      while(nextBeat<ctx.currentTime+0.2){const t=nextBeat,s=step%16;
+        if(s%2===0)tone('sine',150,40,0.25,0.8,musicBus,t);
+        if(s%2===1)noise(0.04,0.15,7000,'highpass',musicBus,t);
+        const bf=bass[(step>>1)%8];if(s%2===1&&bf){tone('sawtooth',bf*2,bf*2,0.2,0.18,musicBus,t);tone('square',bf,bf,0.2,0.12,musicBus,t)}
+        if(s===14&&(step>>4)%2===1)tone('triangle',440,880,0.3,0.06,musicBus,t);
+        nextBeat+=spb;step++;}
+    },
+    toggleMute(){muted=!muted;localStorage.setItem('cbm_muted',muted?'1':'0');if(master)master.gain.setTargetAtTime(muted?0:0.7,ctx.currentTime,0.05);return muted}
+  };
+  return api;
+})();
+['pointerdown','keydown'].forEach(ev=>addEventListener(ev,()=>{SFX.init();if(gameStarted)SFX.music(true)},{passive:true}));
 
 function animateWalkCycle(spr,time,isDrone){
   const ud=spr.userData;
@@ -1395,7 +1453,7 @@ function animate(){
   tickAmmoRegen(delta);
   tickBombs(delta);
   tickFFDrone(delta,time);
-  tickDying(delta);tickHitFlash(rawDelta);tickDmgNums(rawDelta);
+  tickDying(delta);SFX.setHum(droneBoarded);SFX.tick();tickHitFlash(rawDelta);tickDmgNums(rawDelta);
   drawMinimap();
 
   if(isLocked&&!dialogueOpen&&!panelOpen){
@@ -1550,7 +1608,7 @@ document.getElementById('start-btn').addEventListener('click',()=>{
     document.getElementById('title-screen').style.display='none';
     document.getElementById('ui').style.display='flex';
     createPlayerMesh(selectedChar);
-    gameStarted=true;
+    gameStarted=true;SFX.init();SFX.music(true);
     setTimeout(()=>showToast('🔫 Orange beam = Plasma Rifle · 🛸 cyan pad = drone (E to board) · Dragon: F to fly after Phase 2'),4000);
     showToast(`Welcome as ${selectedChar.toUpperCase()}! Collect items, build ZPEGs, unlock flight & defend The Man.`);
   },750);
