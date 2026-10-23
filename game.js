@@ -1578,11 +1578,19 @@ function tickPanda(dt,time){
 // ---- Quadruped ground drone (FF Drone template): ground height, minigun instead of foam, J toggles follow/guard The Man ----
 let quad=null,quadCool=0,quadGuard=false;
 function makeQuad(){
-  const g=new THREE.Group(),m=new THREE.MeshStandardMaterial({color:0x111a22,emissive:0x00aaff,emissiveIntensity:0.8,metalness:0.8,roughness:0.3});
-  const hull=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.4,1.6),m);hull.position.y=0.9;g.add(hull);
-  const gun=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,1.1,8),new THREE.MeshBasicMaterial({color:0xffcc33}));gun.rotation.x=Math.PI/2;gun.position.set(0,1.25,0.6);g.add(gun);
-  const legs=[];for(let k=0;k<4;k++){const l=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.9,0.15),m);l.position.set(k%2?0.55:-0.55,0.45,k<2?0.6:-0.6);g.add(l);legs.push(l)}
-  g.userData={legs,gun};g.position.set(player.position.x+2,0,player.position.z-2);scene.add(g);return g;
+  // Robot-dog look: boxy body, 4 jointed legs (hip→knee), minigun on its back, front manipulator arm with glowing optics lens as the 'head'
+  const g=new THREE.Group(),m=new THREE.MeshStandardMaterial({color:0xd9c84a,emissive:0x221a00,metalness:0.5,roughness:0.5}),dk=new THREE.MeshStandardMaterial({color:0x1a1a1f,metalness:0.8,roughness:0.4});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(0.8,0.4,1.7),m);body.position.y=1.0;g.add(body);
+  const gunG=new THREE.Group();gunG.position.set(0,1.35,0.1);gunG.add(new THREE.Mesh(new THREE.BoxGeometry(0.35,0.25,0.5),dk));
+  for(let k=0;k<6;k++){const br=new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,0.9,6),dk);br.rotation.x=Math.PI/2;br.position.set(Math.cos(k)*0.09,Math.sin(k)*0.09,0.6);gunG.add(br)}g.add(gunG);
+  const arm1=new THREE.Mesh(new THREE.BoxGeometry(0.12,0.12,0.7),dk);arm1.position.set(0,1.35,1.0);arm1.rotation.x=-0.6;g.add(arm1);
+  const head=new THREE.Mesh(new THREE.BoxGeometry(0.28,0.2,0.3),m);head.position.set(0,1.55,1.4);g.add(head);
+  const lens=new THREE.Mesh(new THREE.SphereGeometry(0.08,10,8),new THREE.MeshBasicMaterial({color:0x00e5ff}));lens.position.set(0,1.55,1.57);g.add(lens);
+  const legs=[];for(let k=0;k<4;k++){const hip=new THREE.Group();hip.position.set(k%2?0.45:-0.45,0.95,k<2?0.65:-0.65);
+    const up=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.5,0.14),m);up.position.y=-0.25;hip.add(up);
+    const knee=new THREE.Group();knee.position.y=-0.5;hip.add(knee);const lo=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.5,0.1),dk);lo.position.y=-0.22;knee.add(lo);
+    hip.userData.knee=knee;g.add(hip);legs.push(hip)}
+  g.userData={legs,gun:gunG,lens};g.position.set(player.position.x+2,0,player.position.z-2);scene.add(g);return g;
 }
 function tickQuad(delta,time){
   if(!quad)return;quadCool-=delta;
@@ -1591,10 +1599,11 @@ function tickQuad(delta,time){
   const tgt=new THREE.Vector3(home.x-2.5,0,home.z+2);
   const dx=tgt.x-quad.position.x,dz=tgt.z-quad.position.z,d=Math.hypot(dx,dz),moving=d>0.8;
   if(moving){const sp=Math.min(d,10*delta);quad.position.x+=dx/d*sp;quad.position.z+=dz/d*sp}
-  quad.userData.legs.forEach((l,k)=>l.rotation.x=moving?Math.sin(time*12+(k%3?Math.PI:0))*0.5:0);
+  quad.userData.legs.forEach((l,k)=>{const ph=time*12+((k===0||k===3)?0:Math.PI);l.rotation.x=moving?Math.sin(ph)*0.5:0;l.userData.knee.rotation.x=moving?Math.max(0,Math.cos(ph))*0.8:0.15}); // diagonal-pair trot
+  quad.userData.gun.children.forEach((c,i)=>{if(i)c.position.x=Math.cos(i+(best?time*30:0))*0.09,c.position.y=Math.sin(i+(best?time*30:0))*0.09});quad.userData.lens.material.color.setHSL(0.52,1,0.5+Math.sin(time*6)*0.2);
   quad.rotation.y=best?Math.atan2(best.position.x-quad.position.x,best.position.z-quad.position.z):Math.atan2(dx,dz);
   if(best&&quadCool<=0){quadCool=0.15;
-    const a=quad.position.clone().add(new THREE.Vector3(0,1.25,0)),ln=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,best.position.clone()]),new THREE.LineBasicMaterial({color:0xffdd55}));scene.add(ln);setTimeout(()=>scene.remove(ln),50);
+    const a=quad.position.clone().add(new THREE.Vector3(0,1.35,0)),ln=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,best.position.clone()]),new THREE.LineBasicMaterial({color:0xffdd55}));scene.add(ln);setTimeout(()=>scene.remove(ln),50);
     best.userData.hp-=6;onHit(best,6,a,0.2);if(Math.random()<0.3)SFX.hit(false);
     if(best.userData.hp<=0){const isR=rogueDrones.includes(best);killSprite(best,isR?'explode':'death');(isR?rogueDrones:enemyNpcs).splice((isR?rogueDrones:enemyNpcs).indexOf(best),1);tokens+=isR?8:15;isR?checkDroneWave():checkDefendWin();updateUI()}}
 }
