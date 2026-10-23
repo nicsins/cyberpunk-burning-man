@@ -397,6 +397,7 @@ function onKeyDown(e){
     case 'KeyY':if(gameStarted)toggleAutoFire();break;
     case 'KeyV':if(targeting&&!fireRocket())showToast('No lock yet — hold the target in the reticle');break;
     case 'KeyB':if(gameStarted)smokeScreen();break;
+    case 'KeyZ':if(gameStarted)chainSweep();break;
     case 'KeyE':interact();break;
     case 'KeyF':toggleFlight();break;
     case 'KeyR':useSpecialAbility();break;
@@ -423,7 +424,7 @@ function onKeyUp(e){
 // Vertical axis while flying: Space up, C/Ctrl/Q down. Clamped to ALT_MIN..ALT_MAX.
 const ALT_MIN=2,ALT_MAX=40,HULL_MAX=100;let flyUp=false,flyDown=false,droneHull=HULL_MAX;
 function updateHullHud(){const el=ensureHudBox('hull','HULL','#66ffcc');el.textContent=droneBoarded?Math.max(0,Math.round(droneHull))+'%':'—'}
-function damageHull(n){if(!droneBoarded||smokeT>0)return;droneHull-=n;shake(0.15);updateHullHud();if(droneHull<=0){droneHull=HULL_MAX;exitDrone(true);showPhaseBanner('💥 SHOT DOWN — drone crashed. You\'re on foot now: E on the drone to re-board (hull repaired)');SFX.boom()}}
+function damageHull(n){if(!droneBoarded||smokeT>0)return;if(selectedChar==='panda')n*=0.6;droneHull-=n;shake(0.15);updateHullHud();if(droneHull<=0){droneHull=HULL_MAX;exitDrone(true);showPhaseBanner('💥 SHOT DOWN — drone crashed. You\'re on foot now: E on the drone to re-board (hull repaired)');SFX.boom()}}
 let middleHeld=false,savedPointerSpeed=1;
 function mouseMoveAllowed(){return gameStarted&&!dialogueOpen&&!panelOpen}
 function onWheel(e){
@@ -1544,7 +1545,36 @@ function tickWingman(dt,time){
   wingFlapT+=dt;if(wingFlapT>Math.PI*2/7){wingFlapT=0;SFX.flap(Math.max(0,1-camera.getWorldPosition(new THREE.Vector3()).distanceTo(wing.position)/30)*(1+extra))}
   wingFireCd-=dt;if(wingFireCd<=0){let best=null,bd=20;for(const t of rogueDrones.concat(enemyNpcs)){if(t.userData.tut)continue;const d=t.position.distanceTo(wing.position);if(d<bd){bd=d;best=t}}if(best){wingBreath(best);wingFireCd=2.5}else wingFireCd=0.5}
 }
-window.__cbm2={get wing(){return wing},smokeScreen,get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
+// ---- Panda ground tank: Z chain sweep (360° melee), Bamboo Boost wafers (15s fusion glow: bigger/stronger sweep, faster, auto-sweep) ----
+let sweepCd=0,boostT=0,boostFx=null,wafers=[],waferT=0;
+function spawnWafer(){
+  const g=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,0.12,16),new THREE.MeshStandardMaterial({color:0x66ff44,emissive:0x33ff66,emissiveIntensity:1.6}));
+  const a=Math.random()*Math.PI*2,r=8+Math.random()*30;g.position.set(Math.cos(a)*r,1,Math.sin(a)*r);g.rotation.x=Math.PI/2;scene.add(g);wafers.push(g);
+}
+function chainSweep(auto){
+  if(selectedChar!=='panda'){if(!auto)showToast('⛓ Chain sweep is Panda\'s move (2 to switch)');return}
+  if(sweepCd>0)return;const B=boostT>0;sweepCd=B?0.6:1.2;
+  const R=B?8:5,dmg=B?70:35,p=player.position;let n=0;
+  const ring=new THREE.Mesh(new THREE.TorusGeometry(R*0.8,0.08,6,40),new THREE.MeshBasicMaterial({color:B?0x66ff88:0xccccdd,transparent:true,opacity:0.9}));
+  ring.rotation.x=Math.PI/2;ring.position.set(p.x,1.2,p.z);scene.add(ring);let k=0;const iv=setInterval(()=>{k++;ring.rotation.z+=0.5;ring.material.opacity=0.9-k*0.08;if(k>=11){clearInterval(iv);scene.remove(ring)}},30);
+  SFX.shot();
+  for(let i=enemyNpcs.length-1;i>=0;i--){const e=enemyNpcs[i];if(flatDist(e.position,p)<R){e.userData.hp-=dmg;onHit(e,dmg,p,2);n++;if(e.userData.hp<=0){killSprite(e,'death');enemyNpcs.splice(i,1);tokens+=15;checkDefendWin()}}}
+  if(n){showToast(`⛓ Chain sweep! ${n} arsonist${n>1?'s':''} knocked back`);updateUI()}
+}
+function tickPanda(dt,time){
+  if(sweepCd>0)sweepCd-=dt;
+  waferT-=dt;if(gameStarted&&wafers.length<3&&waferT<=0){spawnWafer();waferT=20}
+  wafers.forEach(w=>{w.rotation.z+=dt*2;w.position.y=1+Math.sin(time*3)*0.2});
+  for(let i=wafers.length-1;i>=0;i--)if(!isFlying&&flatDist(wafers[i].position,player.position)<2){scene.remove(wafers[i]);wafers.splice(i,1);SFX.chime();
+    if(selectedChar==='panda'){boostT=15;showPhaseBanner('🎋 BAMBOO BOOST — fusion mode 15s: bigger chain sweep, faster, auto-sweep')}else showToast('🎋 Bamboo Boost wafer — only Panda can use it (press 2)')}
+  if(boostT>0){boostT-=dt;
+    if(!boostFx){boostFx=new THREE.Group();for(let k=0;k<3;k++){const t=new THREE.Mesh(new THREE.TorusGeometry(1.2+k*0.35,0.05,6,32),new THREE.MeshBasicMaterial({color:[0x66ff88,0x00ffcc,0xffee66][k],transparent:true,opacity:0.8,blending:THREE.AdditiveBlending}));t.rotation.x=Math.PI/2;boostFx.add(t)}scene.add(boostFx)}
+    boostFx.position.set(player.position.x,0.3,player.position.z);boostFx.children.forEach((c,k)=>{c.position.y=0.4+k*0.9+Math.sin(time*4+k)*0.3;c.rotation.z+=dt*(2+k)});
+    if(playerMesh)playerMesh.material.color.setHSL(0.33,1,0.6+Math.sin(time*10)*0.15);
+    if(enemyNpcs.some(e=>flatDist(e.position,player.position)<8))chainSweep(true);
+  }else if(boostFx){scene.remove(boostFx);boostFx=null;if(playerMesh)playerMesh.material.color.set(0xffffff);showToast('🎋 Bamboo Boost wore off')}
+}
+window.__cbm2={get boostT(){return boostT},get wafers(){return wafers},chainSweep,get wing(){return wing},smokeScreen,get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
 function onHit(e,dmg,from,kb=0.8){
   const ud=e.userData;
   if(!ud.baseColor)ud.baseColor=e.material.color.clone();
@@ -1641,7 +1671,7 @@ function animate(){
   if(attackCooldown>0)attackCooldown-=delta;
   tickAmmoRegen(delta);
   tickBombs(delta);
-  tickFFDrone(delta,time);tickTutorial(delta);tickRockets(delta);tickWingman(delta,time);
+  tickFFDrone(delta,time);tickTutorial(delta);tickRockets(delta);tickWingman(delta,time);tickPanda(delta,time);
   tickDying(delta);tickCombo(delta);SFX.setHum(droneBoarded);SFX.tick();tickHitFlash(rawDelta);tickDmgNums(rawDelta);
   drawMinimap();
 
@@ -1653,7 +1683,7 @@ function animate(){
     else{velocity.y-=velocity.y*3*delta;velocity.y+=(Number(flyUp)-Number(flyDown))*45*delta}
 
     direction.z=Number(moveForward)-Number(moveBackward);direction.x=Number(moveRight)-Number(moveLeft);direction.normalize();
-    const speed=isFlying?40:60; // terminal ≈ speed/friction: ~7.5 u/s walking, ~16 u/s flying
+    const speed=(isFlying?40:60)*(boostT>0&&!isFlying?1.5:1); // terminal ≈ speed/friction: ~7.5 u/s walking, ~16 u/s flying
     if(moveForward||moveBackward)velocity.z-=direction.z*speed*delta;
     if(moveLeft||moveRight)velocity.x-=direction.x*speed*delta;
     controls.moveRight(-velocity.x*delta);controls.moveForward(-velocity.z*delta);
