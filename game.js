@@ -9,6 +9,7 @@ const LOCAL = 'assets/';
 const useLocal = location.protocol === 'file:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 
 let scene,camera,renderer,controls,player,playerMesh,clock,loader;
+const ANIM={};let TITLES={}; // anim sprite sheets + story-card backgrounds (filled in init)
 let selectedChar=null,velocity=new THREE.Vector3(),direction=new THREE.Vector3();
 let moveForward=false,moveBackward=false,moveLeft=false,moveRight=false,canJump=false,isLocked=false,dialogueOpen=false;
 let npcs=[],installations=[],theMan,dustParticles,collectibles=[],generators=[],itemLights=[];
@@ -256,6 +257,10 @@ async function init(){
   // Animated sprite sheets ship as data URIs in assets/sprite_sheets.js (missing -> tilt/squash fallback)
   try{const {SPRITE_SHEETS}=await import('./assets/sprite_sheets.js');
     for(const [k,uri] of Object.entries(SPRITE_SHEETS))textures[k]=await loadTexture(uri);}catch(e){console.warn('sprite sheets unavailable',e)}
+  // Art-director anim sheets (dragon wingman / robodog / panda boost) + story-card backgrounds; missing -> procedural meshes
+  await Promise.all(['sheets_dragon','sheets_ground'].map(async f=>{try{const {SHEETS}=await import(`./assets/${f}.js`);
+    for(const [k,m] of Object.entries(SHEETS)){const tex=await loadTexture(m.src);tex.generateMipmaps=false;tex.minFilter=THREE.LinearFilter;ANIM[k]={...m,src:null,tex}}}catch(e){console.warn('anim sheet unavailable',f,e)}}));
+  try{TITLES=(await import('./assets/title_cards.js')).TITLES}catch(e){console.warn('title cards unavailable',e)}
   // fix extensions for jpg
   textures.item_creator=await loadTexture(assetUrl('item_creator.png').replace('item_creator.png','item_creator.png'));
   try{textures.item_creator=await loadTexture(useLocal?LOCAL+'item_creator.png':CDN+'item_creator.png');}catch(e){}
@@ -1513,7 +1518,8 @@ function makeWingman(){
   const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute([0,0,0, 3.2,0.6,0.4, 2.6,-0.4,-0.9, 0,0,0, 2.6,-0.4,-0.9, 1.2,-0.2,-1.3],3));wg.computeVertexNormals();
   const L=new THREE.Mesh(wg,wm),R=new THREE.Mesh(wg,wm);R.scale.x=-1;L.position.y=R.position.y=0.4;g.add(L,R);
   const tail=new THREE.Mesh(new THREE.ConeGeometry(0.25,2.8,6),new THREE.MeshStandardMaterial({color:0x330044,emissive:0xff00aa,emissiveIntensity:0.6}));tail.rotation.x=Math.PI/2;tail.position.set(0,-0.6,-1.8);g.add(tail);
-  g.userData={L,R,tail,bank:0};g.position.copy(player.position);scene.add(g);return g;
+  const spr=animSprite('dragon_wingman',5.2);if(spr){g.add(spr);body.visible=L.visible=R.visible=tail.visible=false}
+  g.userData={L,R,tail,bank:0,spr,breathT:0};g.position.copy(player.position);scene.add(g);return g;
 }
 function smokeScreen(){
   if(!wing){hint('nowing','💨 Smoke screen comes from the Dragon wingman — fly a drone to call him in',10);return}
@@ -1526,7 +1532,7 @@ function wingBreath(t){
   const from=wing.position.clone(),to=t.position.clone();
   for(let k=1;k<=6;k++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:textures.fire_patch||null,color:textures.fire_patch?0xffffff:0xff5500,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
     sp.position.lerpVectors(from,to,k/6);sp.scale.setScalar(1+k*0.4);scene.add(sp);setTimeout(()=>scene.remove(sp),350+k*40)}
-  SFX.hiss();t.userData.hp-=30;onHit(t,30,from);
+  wing.userData.breathT=0.55;SFX.hiss();t.userData.hp-=30;onHit(t,30,from);
   if(t.userData.hp<=0){const isR=rogueDrones.includes(t);killSprite(t,isR?'explode':'death');(isR?rogueDrones:enemyNpcs).splice((isR?rogueDrones:enemyNpcs).indexOf(t),1);tokens+=isR?8:15;showToast('🐉 Dragon wingman torched one!');isR?checkDroneWave():checkDefendWin();updateUI()}
 }
 function tickWingman(dt,time){
@@ -1544,11 +1550,18 @@ function tickWingman(dt,time){
   const flap=Math.sin(time*7)*0.7,extra=Math.abs(wing.userData.bank);
   wing.userData.L.rotation.z=flap;wing.userData.R.rotation.z=-flap;wing.userData.L.scale.setScalar(1+extra*0.5);wing.userData.R.scale.set(-(1+extra*0.5),1+extra*0.5,1+extra*0.5);
   wing.userData.tail.rotation.y=wing.userData.bank*0.8;
+  const ws=wing.userData.spr;if(ws){const u=wing.userData;u.breathT-=dt;const st=u.breathT>0?'fireBreath':u.bank>0.3?'bankLeft':u.bank<-0.3?'bankRight':'flap';  // yaw increasing = turning left
+    playAnim(ws,st,dt);const k=st==='fireBreath'?1.15:1;ws.scale.set(5.2*k,5.2*k,1);wing.rotation.z=0}
   wingFlapT+=dt;if(wingFlapT>Math.PI*2/7){wingFlapT=0;SFX.flap(Math.max(0,1-camera.getWorldPosition(new THREE.Vector3()).distanceTo(wing.position)/30)*(1+extra))}
   wingFireCd-=dt;if(wingFireCd<=0){let best=null,bd=20;for(const t of rogueDrones.concat(enemyNpcs)){if(t.userData.tut)continue;const d=t.position.distanceTo(wing.position);if(d<bd){bd=d;best=t}}if(best){wingBreath(best);wingFireCd=2.5}else wingFireCd=0.5}
 }
+// ---- Sprite-sheet billboard animation (row-major frames, inclusive ranges) ----
+function animSprite(key,h){const s=ANIM[key];if(!s)return null;const tex=s.tex.clone();tex.needsUpdate=true;tex.repeat.set(1/s.cols,1/s.rows);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:0.05,depthWrite:false}));sp.scale.set(h*s.frameW/s.frameH,h,1);sp.userData.anim={s,tex,name:null,t:0,h,flip:false};playAnim(sp,Object.keys(s.anims)[0],0);return sp}
+function playAnim(sp,name,dt,loop=true){const a=sp.userData.anim;if(a.name!==name){a.name=name;a.t=0}a.t+=dt;const [lo,hi]=a.s.anims[name],n=hi-lo+1;let k=Math.floor(a.t*a.s.fps);const done=k>=n;k=loop?k%n:Math.min(k,n-1);
+  const f=lo+k,c=f%a.s.cols,r=Math.floor(f/a.s.cols);a.tex.repeat.x=(a.flip?-1:1)/a.s.cols;a.tex.offset.set((c+(a.flip?1:0))/a.s.cols,1-(r+1)/a.s.rows);return done}
 // ---- Panda ground tank: Z chain sweep (360° melee), Bamboo Boost wafers (15s fusion glow: bigger/stronger sweep, faster, auto-sweep) ----
-let sweepCd=0,boostT=0,boostFx=null,wafers=[],waferT=0;
+let sweepCd=0,boostT=0,boostFx=null,boostSpr=null,sweepAnimT=0,wafers=[],waferT=0;
 function spawnWafer(){
   const g=new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,0.12,16),new THREE.MeshStandardMaterial({color:0x66ff44,emissive:0x33ff66,emissiveIntensity:1.6}));
   const a=Math.random()*Math.PI*2,r=8+Math.random()*30;g.position.set(Math.cos(a)*r,1,Math.sin(a)*r);g.rotation.x=Math.PI/2;scene.add(g);wafers.push(g);
@@ -1559,7 +1572,7 @@ function chainSweep(auto){
   const R=B?8:5,dmg=B?70:35,p=player.position;let n=0;
   const ring=new THREE.Mesh(new THREE.TorusGeometry(R*0.8,0.08,6,40),new THREE.MeshBasicMaterial({color:B?0x66ff88:0xccccdd,transparent:true,opacity:0.9}));
   ring.rotation.x=Math.PI/2;ring.position.set(p.x,1.2,p.z);scene.add(ring);let k=0;const iv=setInterval(()=>{k++;ring.rotation.z+=0.5;ring.material.opacity=0.9-k*0.08;if(k>=11){clearInterval(iv);scene.remove(ring)}},30);
-  SFX.shot();
+  if(B)sweepAnimT=0.5;SFX.shot();
   for(let i=enemyNpcs.length-1;i>=0;i--){const e=enemyNpcs[i];if(flatDist(e.position,p)<R){e.userData.hp-=dmg;onHit(e,dmg,p,2);n++;if(e.userData.hp<=0){killSprite(e,'death');enemyNpcs.splice(i,1);tokens+=15;checkDefendWin()}}}
   if(n){showToast(`⛓ Chain sweep! ${n} arsonist${n>1?'s':''} knocked back`);updateUI()}
 }
@@ -1572,9 +1585,11 @@ function tickPanda(dt,time){
   if(boostT>0){boostT-=dt;
     if(!boostFx){boostFx=new THREE.Group();for(let k=0;k<3;k++){const t=new THREE.Mesh(new THREE.TorusGeometry(1.2+k*0.35,0.05,6,32),new THREE.MeshBasicMaterial({color:[0x66ff88,0x00ffcc,0xffee66][k],transparent:true,opacity:0.8,blending:THREE.AdditiveBlending}));t.rotation.x=Math.PI/2;boostFx.add(t)}scene.add(boostFx)}
     boostFx.position.set(player.position.x,0.3,player.position.z);boostFx.children.forEach((c,k)=>{c.position.y=0.4+k*0.9+Math.sin(time*4+k)*0.3;c.rotation.z+=dt*(2+k)});
+    if(!boostSpr&&ANIM.panda_bamboo_boost){boostSpr=animSprite('panda_bamboo_boost',5);boostSpr.position.y=2.3;boostSpr.renderOrder=2;player.add(boostSpr)}
+    if(boostSpr){sweepAnimT-=dt;const a=boostSpr.userData.anim;playAnim(boostSpr,sweepAnimT>0?'chainSweep':(a.name==='glow'&&a.t<0.4)?'glow':'aura',dt,sweepAnimT<=0)}
     if(playerMesh)playerMesh.material.color.setHSL(0.33,1,0.6+Math.sin(time*10)*0.15);
     if(enemyNpcs.some(e=>flatDist(e.position,player.position)<8))chainSweep(true);
-  }else if(boostFx){scene.remove(boostFx);boostFx=null;if(playerMesh)playerMesh.material.color.set(0xffffff);showToast('🎋 Bamboo Boost wore off')}
+  }else if(boostFx){scene.remove(boostFx);boostFx=null;if(boostSpr){player.remove(boostSpr);boostSpr=null}if(playerMesh)playerMesh.material.color.set(0xffffff);showToast('🎋 Bamboo Boost wore off')}
 }
 // ---- Quadruped ground drone (FF Drone template): ground height, minigun instead of foam, J toggles follow/guard The Man ----
 let quad=null,quadCool=0,quadGuard=false;
@@ -1591,7 +1606,8 @@ function makeQuad(){
     const up=new THREE.Mesh(new THREE.BoxGeometry(0.14,0.5,0.14),m);up.position.y=-0.25;hip.add(up);
     const knee=new THREE.Group();knee.position.y=-0.5;hip.add(knee);const lo=new THREE.Mesh(new THREE.BoxGeometry(0.1,0.5,0.1),dk);lo.position.y=-0.22;knee.add(lo);
     hip.userData.knee=knee;g.add(hip);legs.push(hip)}
-  g.userData={legs,gun:gunG,lens};g.position.set(player.position.x+2,0,player.position.z-2);scene.add(g);return g;
+  const spr=animSprite('robodog',2.4);if(spr){g.children.forEach(c=>c.visible=false);spr.position.y=1.1;g.add(spr)}
+  g.userData={legs,gun:gunG,lens,spr};g.position.set(player.position.x+2,0,player.position.z-2);scene.add(g);return g;
 }
 function tickQuad(delta,time){
   if(!quad)return;quadCool-=delta;
@@ -1603,6 +1619,8 @@ function tickQuad(delta,time){
   quad.userData.legs.forEach((l,k)=>{const ph=time*12+((k===0||k===3)?0:Math.PI);l.rotation.x=moving?Math.sin(ph)*0.5:0;l.userData.knee.rotation.x=moving?Math.max(0,Math.cos(ph))*0.8:0.15}); // diagonal-pair trot
   quad.userData.gun.children.forEach((c,i)=>{if(i)c.position.x=Math.cos(i+(best?time*30:0))*0.09,c.position.y=Math.sin(i+(best?time*30:0))*0.09});quad.userData.lens.material.color.setHSL(0.52,1,0.5+Math.sin(time*6)*0.2);
   quad.rotation.y=best?Math.atan2(best.position.x-quad.position.x,best.position.z-quad.position.z):Math.atan2(dx,dz);
+  const qs=quad.userData.spr;if(qs){const cr=new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld,0),dir=best?best.position.clone().sub(quad.position):new THREE.Vector3(dx,0,dz);
+    if(Math.abs(dir.dot(cr))>0.2)qs.userData.anim.flip=dir.dot(cr)<0;playAnim(qs,best?'fire':'trot',best||moving?delta:0)}
   if(best&&quadCool<=0){quadCool=0.15;
     const a=quad.position.clone().add(new THREE.Vector3(0,1.35,0)),ln=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,best.position.clone()]),new THREE.LineBasicMaterial({color:0xffdd55}));scene.add(ln);setTimeout(()=>scene.remove(ln),50);
     best.userData.hp-=6;onHit(best,6,a,0.2);if(Math.random()<0.3)SFX.hit(false);
@@ -1612,10 +1630,10 @@ FORGE.push({id:'quad-drone',label:'🐕 Quad Minigun Drone',desc:'Four-legged gr
   onForge(){if(quad){showToast('You already have a Quad Drone');return}quad=makeQuad();inventory['quad-drone']=1;showToast('🐕 Quad Minigun Drone online — it follows and shoots. J toggles guard The Man.')}});
 // ---- Phoenix narrative: The Man must burn at solstice sunrise (end of the defense night) so the city is reborn; arsonists want an early burn ----
 const NIGHT_SEC=180;let dawnT=null,storyEnded=false,embers=[];
-function storyCard(id,html,btns,onClose){
+function storyCard(id,html,btns,onClose,bg){
   let el=document.getElementById(id);if(el)el.remove();
   el=document.createElement('div');el.id=id;el.className='story-card';
-  el.style.cssText='position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 60%,rgba(80,20,0,.55),rgba(0,0,0,.88));font-family:monospace;color:#ffe9c7;text-align:center';
+  el.style.cssText=`position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 60%,rgba(80,20,0,.35),rgba(0,0,0,.75))${bg&&TITLES[bg]?`,url(${TITLES[bg]}) center/cover`:''};font-family:monospace;color:#ffe9c7;text-align:center`;
   el.innerHTML=`<div style="max-width:620px;padding:28px 34px;border:1px solid #ff7a1a;border-radius:14px;box-shadow:0 0 40px #ff5a0066;background:rgba(10,4,0,.7)">${html}<div style="margin-top:18px">${btns.map((b,i)=>`<button data-i="${i}" style="margin:0 6px;padding:9px 22px;border:0;border-radius:30px;font-weight:bold;cursor:pointer;background:${i?'#333':'linear-gradient(90deg,#ff3d00,#ffb300)'};color:${i?'#ddd':'#000'}">${b.label}</button>`).join('')}</div></div>`;
   document.body.appendChild(el);controls?.unlock?.();
   const close=i=>{el.remove();removeEventListener('keydown',kh,true);(btns[i]?.fn||onClose||(()=>{}))()};
@@ -1626,7 +1644,7 @@ function storyCard(id,html,btns,onClose){
 const H=t=>`<div style="font-size:1.7rem;font-weight:bold;letter-spacing:4px;color:#ffb347;text-shadow:0 0 14px #ff5a00">${t}</div>`;
 function showIntroCard(){
   if(localStorage.getItem('cbm_intro_seen'))return;localStorage.setItem('cbm_intro_seen','1');
-  storyCard('intro-card',H('🔥 BURN AT SUNRISE')+`<p style="line-height:1.7;margin-top:14px">It started on a beach: one heartbroken soul, one wooden figure, one fire at the solstice.<br>Ash became ritual. The burn became rebirth.<br>Tonight The Man must burn at <b>solstice sunrise</b> so the city can be reborn.<br>Arsonists want him lit early, to steal the rebirth. <b>Hold the line until dawn.</b></p><div style="opacity:.55;font-size:.75rem">press any key to continue</div>`,[{label:'ENTER THE NIGHT'}]);
+  storyCard('intro-card',H('🔥 BURN AT SUNRISE')+`<p style="line-height:1.7;margin-top:14px">It started on a beach: one heartbroken soul, one wooden figure, one fire at the solstice.<br>Ash became ritual. The burn became rebirth.<br>Tonight The Man must burn at <b>solstice sunrise</b> so the city can be reborn.<br>Arsonists want him lit early, to steal the rebirth. <b>Hold the line until dawn.</b></p><div style="opacity:.55;font-size:.75rem">press any key to continue</div>`,[{label:'ENTER THE NIGHT'}],null,'intro');
 }
 function spawnEmbers(n,phoenix){
   if(!theMan)return;
@@ -1648,13 +1666,13 @@ function tickStory(dt){
 function earlyBurn(){
   storyEnded=true;spawnEmbers(40,false);SFX.boom();
   storyCard('loss-card',H('THE FIRE CAME TOO SOON')+`<p style="line-height:1.7;margin-top:14px">The arsonists lit The Man before the sun was up.<br>Smoke instead of sunrise. No rebirth tonight, only ash.<br>The playa remembers. The night can be run again.</p>`,
-    [{label:'TRY THE NIGHT AGAIN',fn:()=>location.reload()},{label:'Keep wandering',fn:()=>{}}]);
+    [{label:'TRY THE NIGHT AGAIN',fn:()=>location.reload()},{label:'Keep wandering',fn:()=>{}}],null,'loss');
 }
 function showWinCard(){
   storyEnded=true;spawnEmbers(120,true);let k=0;const iv=setInterval(()=>{spawnEmbers(25,k%2===0);if(++k>10)clearInterval(iv)},450);
-  setTimeout(()=>storyCard('win-card',H('🐦‍🔥 THE PHOENIX RISES')+`<p style="line-height:1.7;margin-top:14px">The sun breaks the horizon and The Man burns right on time.<br>Heartbreak to ash, ash to wings.<br>The city is reborn. See you next solstice.</p>`,[{label:'RISE AGAIN',fn:()=>location.reload()},{label:'Watch the burn',fn:()=>{}}]),1800);
+  setTimeout(()=>storyCard('win-card',H('🐦‍🔥 THE PHOENIX RISES')+`<p style="line-height:1.7;margin-top:14px">The sun breaks the horizon and The Man burns right on time.<br>Heartbreak to ash, ash to wings.<br>The city is reborn. See you next solstice.</p>`,[{label:'RISE AGAIN',fn:()=>location.reload()},{label:'Watch the burn',fn:()=>{}}],null,'win'),1800);
 }
-window.__cbm2={showIntroCard,showWinCard,earlyBurn,get dawnT(){return dawnT},set dawnT(v){dawnT=v},get quad(){return quad},get boostT(){return boostT},get wafers(){return wafers},chainSweep,get wing(){return wing},smokeScreen,get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
+window.__cbm2={ANIM,placeInView(o,d,y){const f=new THREE.Vector3();camera.getWorldDirection(f);const q=camera.getWorldPosition(new THREE.Vector3()).addScaledVector(f,d);if(y!=null)q.y=y;o.position.copy(q)},get TITLES(){return TITLES},get boostSpr(){return boostSpr},makeQuadNow(){if(!quad)quad=makeQuad();return quad},showIntroCard,showWinCard,earlyBurn,get dawnT(){return dawnT},set dawnT(v){dawnT=v},get quad(){return quad},get boostT(){return boostT},get wafers(){return wafers},chainSweep,get wing(){return wing},smokeScreen,get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
 function onHit(e,dmg,from,kb=0.8){
   const ud=e.userData;
   if(!ud.baseColor)ud.baseColor=e.material.color.clone();
