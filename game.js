@@ -396,6 +396,7 @@ function onKeyDown(e){
     case 'KeyT':if(gameStarted)toggleTargeting();break;
     case 'KeyY':if(gameStarted)toggleAutoFire();break;
     case 'KeyV':if(targeting&&!fireRocket())showToast('No lock yet — hold the target in the reticle');break;
+    case 'KeyB':if(gameStarted)smokeScreen();break;
     case 'KeyE':interact();break;
     case 'KeyF':toggleFlight();break;
     case 'KeyR':useSpecialAbility();break;
@@ -422,7 +423,7 @@ function onKeyUp(e){
 // Vertical axis while flying: Space up, C/Ctrl/Q down. Clamped to ALT_MIN..ALT_MAX.
 const ALT_MIN=2,ALT_MAX=40,HULL_MAX=100;let flyUp=false,flyDown=false,droneHull=HULL_MAX;
 function updateHullHud(){const el=ensureHudBox('hull','HULL','#66ffcc');el.textContent=droneBoarded?Math.max(0,Math.round(droneHull))+'%':'—'}
-function damageHull(n){if(!droneBoarded)return;droneHull-=n;shake(0.15);updateHullHud();if(droneHull<=0){droneHull=HULL_MAX;exitDrone(true);showPhaseBanner('💥 SHOT DOWN — drone crashed. You\'re on foot now: E on the drone to re-board (hull repaired)');SFX.boom()}}
+function damageHull(n){if(!droneBoarded||smokeT>0)return;droneHull-=n;shake(0.15);updateHullHud();if(droneHull<=0){droneHull=HULL_MAX;exitDrone(true);showPhaseBanner('💥 SHOT DOWN — drone crashed. You\'re on foot now: E on the drone to re-board (hull repaired)');SFX.boom()}}
 let middleHeld=false,savedPointerSpeed=1;
 function mouseMoveAllowed(){return gameStarted&&!dialogueOpen&&!panelOpen}
 function onWheel(e){
@@ -1500,7 +1501,50 @@ function tickRockets(dt){
     const to=dest.clone().sub(m.position),d=to.length();m.position.add(to.normalize().multiplyScalar(Math.min(d,38*dt)));m.lookAt(dest);m.rotateX(Math.PI/2);
     if(d<1||m.userData.life<=0||!alive){if(alive){t.userData.hp-=40;onHit(t,40,m.position)}explodeAt(m.position.clone());scene.remove(m);rocketsLive.splice(i,1)}}
 }
-window.__cbm2={get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
+// ---- Dragon wingman: AI escort while you fly a drone (as Panda, or Dragon riding a drone). Wing-flap audio by distance, banks on hard turns, fire breath, smoke screen (B) ----
+let wing=null,wingFireCd=2,wingFlapT=0,lastYaw=0,smokeT=0,smokeCd=0,smokes=[];
+function makeWingman(){
+  const g=new THREE.Group();
+  const body=new THREE.Sprite(new THREE.SpriteMaterial({map:textures.dragon_hd||textures.dragon||null,transparent:true,alphaTest:0.08,depthWrite:false}));body.scale.set(2.6,3.6,1);g.add(body);
+  const wm=new THREE.MeshStandardMaterial({color:0x220a33,emissive:0x8800ff,emissiveIntensity:0.9,side:THREE.DoubleSide,transparent:true,opacity:0.9});
+  const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute([0,0,0, 3.2,0.6,0.4, 2.6,-0.4,-0.9, 0,0,0, 2.6,-0.4,-0.9, 1.2,-0.2,-1.3],3));wg.computeVertexNormals();
+  const L=new THREE.Mesh(wg,wm),R=new THREE.Mesh(wg,wm);R.scale.x=-1;L.position.y=R.position.y=0.4;g.add(L,R);
+  const tail=new THREE.Mesh(new THREE.ConeGeometry(0.25,2.8,6),new THREE.MeshStandardMaterial({color:0x330044,emissive:0xff00aa,emissiveIntensity:0.6}));tail.rotation.x=Math.PI/2;tail.position.set(0,-0.6,-1.8);g.add(tail);
+  g.userData={L,R,tail,bank:0};g.position.copy(player.position);scene.add(g);return g;
+}
+function smokeScreen(){
+  if(!wing){hint('nowing','💨 Smoke screen comes from the Dragon wingman — fly a drone to call him in',10);return}
+  if(smokeCd>0){showToast(`💨 Smoke recharging ${Math.ceil(smokeCd)}s`);return}
+  smokeCd=20;smokeT=6;SFX.whoosh();showToast('💨 Dragon smoke screen — rogue drones lose you for 6s');
+  for(let i=0;i<14;i++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({color:0x99a0aa,transparent:true,opacity:0.55,depthWrite:false}));
+    const a=i/14*Math.PI*2;sp.position.set(player.position.x+Math.cos(a)*4,player.position.y+1+Math.random()*2,player.position.z+Math.sin(a)*4);sp.scale.setScalar(5+Math.random()*3);scene.add(sp);smokes.push(sp)}
+}
+function wingBreath(t){
+  const from=wing.position.clone(),to=t.position.clone();
+  for(let k=1;k<=6;k++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:textures.fire_patch||null,color:textures.fire_patch?0xffffff:0xff5500,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+    sp.position.lerpVectors(from,to,k/6);sp.scale.setScalar(1+k*0.4);scene.add(sp);setTimeout(()=>scene.remove(sp),350+k*40)}
+  SFX.hiss();t.userData.hp-=30;onHit(t,30,from);
+  if(t.userData.hp<=0){const isR=rogueDrones.includes(t);killSprite(t,isR?'explode':'death');(isR?rogueDrones:enemyNpcs).splice((isR?rogueDrones:enemyNpcs).indexOf(t),1);tokens+=isR?8:15;showToast('🐉 Dragon wingman torched one!');isR?checkDroneWave():checkDefendWin();updateUI()}
+}
+function tickWingman(dt,time){
+  if(smokeCd>0)smokeCd-=dt;if(smokeT>0)smokeT-=dt;
+  for(let i=smokes.length-1;i>=0;i--){const s=smokes[i];s.material.opacity-=dt*0.09;s.scale.multiplyScalar(1+dt*0.1);if(s.material.opacity<=0){scene.remove(s);smokes.splice(i,1)}}
+  const want=droneBoarded&&!(selectedChar==='dragon'&&!rideDrone);
+  if(want&&!wing){wing=makeWingman();showToast('🐉 Dragon wingman on your wing — fire breath auto, B smoke screen')}
+  if(!want&&wing){scene.remove(wing);wing=null}
+  if(!wing)return;
+  const yaw=controls.getObject().rotation.y;let dy=yaw-lastYaw;lastYaw=yaw;dy=Math.atan2(Math.sin(dy),Math.cos(dy));
+  const turn=Math.max(-1,Math.min(1,dy/dt/3));wing.userData.bank+=(turn-wing.userData.bank)*Math.min(1,dt*4);
+  const fwd=new THREE.Vector3();camera.getWorldDirection(fwd);fwd.y=0;fwd.normalize();const right=new THREE.Vector3(-fwd.z,0,fwd.x);
+  const tgt=player.position.clone().addScaledVector(right,5).addScaledVector(fwd,3+wing.userData.bank*2);tgt.y=player.position.y+2+Math.sin(time*1.3)*0.6;
+  wing.position.lerp(tgt,Math.min(1,dt*2.5));wing.rotation.y=Math.atan2(fwd.x,fwd.z);wing.rotation.z=-wing.userData.bank*0.9;
+  const flap=Math.sin(time*7)*0.7,extra=Math.abs(wing.userData.bank);
+  wing.userData.L.rotation.z=flap;wing.userData.R.rotation.z=-flap;wing.userData.L.scale.setScalar(1+extra*0.5);wing.userData.R.scale.set(-(1+extra*0.5),1+extra*0.5,1+extra*0.5);
+  wing.userData.tail.rotation.y=wing.userData.bank*0.8;
+  wingFlapT+=dt;if(wingFlapT>Math.PI*2/7){wingFlapT=0;SFX.flap(Math.max(0,1-camera.getWorldPosition(new THREE.Vector3()).distanceTo(wing.position)/30)*(1+extra))}
+  wingFireCd-=dt;if(wingFireCd<=0){let best=null,bd=20;for(const t of rogueDrones.concat(enemyNpcs)){if(t.userData.tut)continue;const d=t.position.distanceTo(wing.position);if(d<bd){bd=d;best=t}}if(best){wingBreath(best);wingFireCd=2.5}else wingFireCd=0.5}
+}
+window.__cbm2={get wing(){return wing},smokeScreen,get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
 function onHit(e,dmg,from,kb=0.8){
   const ud=e.userData;
   if(!ud.baseColor)ud.baseColor=e.material.color.clone();
@@ -1546,6 +1590,8 @@ const SFX=(()=>{
     hit(kill){if(!ok())return;tone('square',kill?520:880,kill?140:600,kill?0.18:0.05,0.12)},
     boom(){if(!ok())return;tone('sine',120,30,0.7,0.9);noise(0.9,0.7,1800,'lowpass',sfxBus,ctx.currentTime,120)},
     hiss(){if(!ok())return;noise(0.5,0.35,3000,'bandpass',sfxBus,ctx.currentTime,6000)},
+    flap(v){if(!ok()||v<0.02)return;noise(0.16,0.5*v,420,'lowpass',sfxBus,ctx.currentTime,160);tone('sine',70,45,0.14,0.25*v)},
+    whoosh(){if(!ok())return;noise(0.8,0.3,900,'bandpass',sfxBus,ctx.currentTime,3000)},
     chime(){if(!ok())return;const t=ctx.currentTime;[880,1320,1760].forEach((f,i)=>tone('triangle',f,f,0.25,0.15,sfxBus,t+i*0.06))},
     setHum(on){
       if(!ok())return;
@@ -1595,7 +1641,7 @@ function animate(){
   if(attackCooldown>0)attackCooldown-=delta;
   tickAmmoRegen(delta);
   tickBombs(delta);
-  tickFFDrone(delta,time);tickTutorial(delta);tickRockets(delta);
+  tickFFDrone(delta,time);tickTutorial(delta);tickRockets(delta);tickWingman(delta,time);
   tickDying(delta);tickCombo(delta);SFX.setHum(droneBoarded);SFX.tick();tickHitFlash(rawDelta);tickDmgNums(rawDelta);
   drawMinimap();
 
