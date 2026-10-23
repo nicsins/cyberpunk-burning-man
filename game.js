@@ -965,7 +965,7 @@ function startFinalBurn(){
   }
   const blaze=new THREE.PointLight(LOOK.PAL.fire,400,100,2);   // burn phase: 1 pooled fire light
   blaze.position.y=12;theMan.add(blaze);
-  tokens+=500;
+  tokens+=500;if(!storyEnded)showWinCard();
   showPhaseBanner('🔥 THE BURN — Radical self-expression. The Man burns. +500 tokens. Festival complete.');
   showToast('🔥 You lit The Man. The Playa celebrates. Thank you for playing Cyberpunk Burning Man Ω.');
   updateUI();
@@ -1610,7 +1610,51 @@ function tickQuad(delta,time){
 }
 FORGE.push({id:'quad-drone',label:'🐕 Quad Minigun Drone',desc:'Four-legged ground sidekick with a minigun; follows you, J = guard The Man. Cost: Weapon Shard + Circuit Board or 90 tokens',items:{'weapon-shard':1,'circuit-board':1},tokens:90,
   onForge(){if(quad){showToast('You already have a Quad Drone');return}quad=makeQuad();inventory['quad-drone']=1;showToast('🐕 Quad Minigun Drone online — it follows and shoots. J toggles guard The Man.')}});
-window.__cbm2={get quad(){return quad},get boostT(){return boostT},get wafers(){return wafers},chainSweep,get wing(){return wing},smokeScreen,get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
+// ---- Phoenix narrative: The Man must burn at solstice sunrise (end of the defense night) so the city is reborn; arsonists want an early burn ----
+const NIGHT_SEC=180;let dawnT=null,storyEnded=false,embers=[];
+function storyCard(id,html,btns,onClose){
+  let el=document.getElementById(id);if(el)el.remove();
+  el=document.createElement('div');el.id=id;el.className='story-card';
+  el.style.cssText='position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 60%,rgba(80,20,0,.55),rgba(0,0,0,.88));font-family:monospace;color:#ffe9c7;text-align:center';
+  el.innerHTML=`<div style="max-width:620px;padding:28px 34px;border:1px solid #ff7a1a;border-radius:14px;box-shadow:0 0 40px #ff5a0066;background:rgba(10,4,0,.7)">${html}<div style="margin-top:18px">${btns.map((b,i)=>`<button data-i="${i}" style="margin:0 6px;padding:9px 22px;border:0;border-radius:30px;font-weight:bold;cursor:pointer;background:${i?'#333':'linear-gradient(90deg,#ff3d00,#ffb300)'};color:${i?'#ddd':'#000'}">${b.label}</button>`).join('')}</div></div>`;
+  document.body.appendChild(el);controls?.unlock?.();
+  const close=i=>{el.remove();removeEventListener('keydown',kh,true);(btns[i]?.fn||onClose||(()=>{}))()};
+  const kh=e=>{if(btns.length===1||e.code==='Escape'||e.code==='Enter'||e.code==='Space'){e.stopPropagation();e.preventDefault();close(0)}};
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>close(+b.dataset.i));
+  setTimeout(()=>addEventListener('keydown',kh,true),300);return el;
+}
+const H=t=>`<div style="font-size:1.7rem;font-weight:bold;letter-spacing:4px;color:#ffb347;text-shadow:0 0 14px #ff5a00">${t}</div>`;
+function showIntroCard(){
+  if(localStorage.getItem('cbm_intro_seen'))return;localStorage.setItem('cbm_intro_seen','1');
+  storyCard('intro-card',H('🔥 BURN AT SUNRISE')+`<p style="line-height:1.7;margin-top:14px">It started on a beach: one heartbroken soul, one wooden figure, one fire at the solstice.<br>Ash became ritual. The burn became rebirth.<br>Tonight The Man must burn at <b>solstice sunrise</b> so the city can be reborn.<br>Arsonists want him lit early, to steal the rebirth. <b>Hold the line until dawn.</b></p><div style="opacity:.55;font-size:.75rem">press any key to continue</div>`,[{label:'ENTER THE NIGHT'}]);
+}
+function spawnEmbers(n,phoenix){
+  if(!theMan)return;
+  for(let i=0;i<n;i++){const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:textures.fire_patch||null,color:[0xffaa33,0xff5500,0xffdd88][i%3],transparent:true,blending:THREE.AdditiveBlending,depthWrite:false}));
+    let x=(Math.random()-.5)*6,y=2+Math.random()*16,vx=(Math.random()-.5)*1.5,vy=3+Math.random()*4;
+    if(phoenix){const w=(Math.random()-.5)*2,a=Math.abs(w);x=w*14;y=26+a*a*5-a*3;vx=w*0.6;vy=2.5}  // wing-shaped flock of embers
+    sp.position.set(theMan.position.x+x,y,theMan.position.z+(Math.random()-.5)*3);sp.scale.setScalar(phoenix?1.6:0.6+Math.random());sp.userData={vx,vy,life:phoenix?5:3+Math.random()*3};scene.add(sp);embers.push(sp)}
+}
+function tickStory(dt){
+  for(let i=embers.length-1;i>=0;i--){const e=embers[i],u=e.userData;u.life-=dt;e.position.x+=u.vx*dt;e.position.y+=u.vy*dt;e.material.opacity=Math.min(1,u.life);if(u.life<=0){scene.remove(e);embers.splice(i,1)}}
+  if(storyEnded)return;
+  if(dawnT===null&&gamePhase==='defend'){dawnT=NIGHT_SEC;showPhaseBanner('🌙 The solstice night begins — keep The Man intact until sunrise')}
+  if(dawnT!==null&&(gamePhase==='defend'||gamePhase==='burn')){
+    dawnT-=dt;const m=Math.max(0,Math.ceil(dawnT));ensureHudBox('dawn','🌅 SUNRISE IN','#ffb347').textContent=`${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`;
+    if(manIntegrity<=0){earlyBurn();return}
+    if(dawnT<=0)startFinalBurn();
+  }
+}
+function earlyBurn(){
+  storyEnded=true;spawnEmbers(40,false);SFX.boom();
+  storyCard('loss-card',H('THE FIRE CAME TOO SOON')+`<p style="line-height:1.7;margin-top:14px">The arsonists lit The Man before the sun was up.<br>Smoke instead of sunrise. No rebirth tonight, only ash.<br>The playa remembers. The night can be run again.</p>`,
+    [{label:'TRY THE NIGHT AGAIN',fn:()=>location.reload()},{label:'Keep wandering',fn:()=>{}}]);
+}
+function showWinCard(){
+  storyEnded=true;spawnEmbers(120,true);let k=0;const iv=setInterval(()=>{spawnEmbers(25,k%2===0);if(++k>10)clearInterval(iv)},450);
+  setTimeout(()=>storyCard('win-card',H('🐦‍🔥 THE PHOENIX RISES')+`<p style="line-height:1.7;margin-top:14px">The sun breaks the horizon and The Man burns right on time.<br>Heartbreak to ash, ash to wings.<br>The city is reborn. See you next solstice.</p>`,[{label:'RISE AGAIN',fn:()=>location.reload()},{label:'Watch the burn',fn:()=>{}}]),1800);
+}
+window.__cbm2={showIntroCard,showWinCard,earlyBurn,get dawnT(){return dawnT},set dawnT(v){dawnT=v},get quad(){return quad},get boostT(){return boostT},get wafers(){return wafers},chainSweep,get wing(){return wing},smokeScreen,get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
 function onHit(e,dmg,from,kb=0.8){
   const ud=e.userData;
   if(!ud.baseColor)ud.baseColor=e.material.color.clone();
@@ -1707,7 +1751,7 @@ function animate(){
   if(attackCooldown>0)attackCooldown-=delta;
   tickAmmoRegen(delta);
   tickBombs(delta);
-  tickFFDrone(delta,time);tickTutorial(delta);tickRockets(delta);tickWingman(delta,time);tickPanda(delta,time);tickQuad(delta,time);
+  tickFFDrone(delta,time);tickTutorial(delta);tickRockets(delta);tickWingman(delta,time);tickPanda(delta,time);tickQuad(delta,time);tickStory(delta);
   tickDying(delta);tickCombo(delta);SFX.setHum(droneBoarded);SFX.tick();tickHitFlash(rawDelta);tickDmgNums(rawDelta);
   drawMinimap();
 
@@ -1863,7 +1907,7 @@ document.getElementById('start-btn').addEventListener('click',()=>{
     document.getElementById('title-screen').style.display='none';
     document.getElementById('ui').style.display='flex';
     createPlayerMesh(selectedChar);
-    gameStarted=true;SFX.init();SFX.music(true);
+    gameStarted=true;SFX.init();SFX.music(true);showIntroCard();
     setTimeout(()=>showToast('🔫 Orange beam = Plasma Rifle · 🛸 cyan pad = drone (E to board) · Dragon: F to fly after Phase 2'),4000);
     showToast(`Welcome as ${selectedChar.toUpperCase()}! Collect items, build ZPEGs, unlock flight & defend The Man.`);
   },750);
