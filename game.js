@@ -693,7 +693,7 @@ function takeGun(){SFX.chime();
   if(gunPickup){scene.remove(gunPickup);gunPickup=null}
   showToast(`🔫 Plasma Rifle! Left-click to fire (${AMMO_MAX} rounds, +1 every ${AMMO_REGEN_SEC}s)`);
 }
-window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,startDroneMode,get droneMode(){return droneMode},get rogueDrones(){return rogueDrones},toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup,get enemyNpcs(){return enemyNpcs},spawnArsonists:n=>spawnArsonists(n),spawnRogueDrones:n=>spawnRogueDrones(n),setPhase:p=>setPhase(p),damageInFront:(r,d)=>damageInFront(r,d),get dying(){return dyingSprites},get hitstop(){return hitstop},get shakeAmt(){return shakeAmt},explodeAt:p=>explodeAt(p),get SFX(){return SFX}};
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,startDroneMode,get droneMode(){return droneMode},get rogueDrones(){return rogueDrones},toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup,get enemyNpcs(){return enemyNpcs},spawnArsonists:n=>spawnArsonists(n),spawnRogueDrones:n=>spawnRogueDrones(n),setPhase:p=>setPhase(p),damageInFront:(r,d)=>damageInFront(r,d),get dying(){return dyingSprites},get hitstop(){return hitstop},get shakeAmt(){return shakeAmt},explodeAt:p=>explodeAt(p),get SFX(){return SFX},get dmScore(){return dmScore},get dmCombo(){return dmCombo},get dmBest(){return dmBest},checkDroneWave:()=>checkDroneWave(),spawnBossDrone:()=>spawnBossDrone(),set droneModeWave(v){droneModeWave=v}};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -834,21 +834,55 @@ function spawnRogueDrones(n){
   showToast(`${n} rogue drones inbound!`);
 }
 
+// ---- Drone Mode scoring: score, combo (3s window, up to x5), best in localStorage, boss every 5 waves ----
+let dmScore=0,dmCombo=1,dmComboT=0,dmBest=+(localStorage.getItem('cbm_drone_best')||0);
+function updateScoreHud(){
+  if(!droneMode)return;const el=ensureHudBox('score','SCORE','#00ffcc');
+  el.innerHTML=`${dmScore}${dmCombo>1?` <b style="color:#ff3399">x${dmCombo}</b>`:''} <span style="opacity:.6;font-size:.8em">best ${dmBest}</span>`;
+}
+function scoreKill(spr){
+  if(!droneMode)return;
+  const base=spr.userData.isBoss?500:spr.userData.isRogue?100:150;
+  const pts=base*dmCombo;dmScore+=pts;
+  spawnDmgNum(spr.position.clone().add(new THREE.Vector3(0,1.2,0)),`+${pts}${dmCombo>1?' x'+dmCombo:''}`,'#00ffcc');
+  dmCombo=Math.min(5,dmCombo+(dmComboT>0?1:0));dmComboT=3;
+  if(dmScore>dmBest){dmBest=dmScore;localStorage.setItem('cbm_drone_best',dmBest)}
+  updateScoreHud();
+}
+function tickCombo(dt){if(dmComboT>0){dmComboT-=dt;if(dmComboT<=0){dmCombo=1;updateScoreHud()}}}
+function spawnBossDrone(){
+  const mat=new THREE.SpriteMaterial({map:textures.rogue_drone||null,transparent:true,alphaTest:0.1,depthWrite:false,color:0xff5577});
+  const spr=new THREE.Sprite(mat);spr.scale.set(4,4,1);
+  const a=Math.random()*Math.PI*2;spr.position.set(Math.cos(a)*45,10,Math.sin(a)*45);
+  spr.userData={isRogue:true,isBoss:true,hp:300,phase:0,speed:0.012,fireT:1.5,baseY:10};
+  if(attachSheet(spr,'drone','hover'))spr.scale.set(4.5,4.5,1);
+  spr.material.color.set(0xff5577);spr.userData.baseColor=new THREE.Color(0xff5577);
+  scene.add(spr);rogueDrones.push(spr);
+  showPhaseBanner(`⚠ BOSS DRONE — wave ${droneModeWave} · 300 HP`);SFX.boom();
+}
+function dropWaveLoot(){
+  const o=controls.getObject().position;
+  const mk=(color,geo)=>new THREE.Mesh(geo,new THREE.MeshStandardMaterial({color:0x111111,emissive:color,emissiveIntensity:1.5,metalness:0.6,roughness:0.3}));
+  for(let i=0;i<4;i++){const bomb=i===3;const m=bomb?mk(0xff2244,new THREE.SphereGeometry(0.35,12,10)):mk(0xffaa00,new THREE.BoxGeometry(0.6,0.4,0.4));
+    const a=i/4*Math.PI*2;m.position.set(o.x+Math.cos(a)*6,0.5,o.z+Math.sin(a)*6);scene.add(m);(bomb?bombPickups:ammoPickups).push(m)}
+}
+
 let droneMode=false,droneModeWave=0;
 function startDroneMode(){
-  droneMode=true;droneModeWave=1;
+  droneMode=true;droneModeWave=1;dmScore=0;dmCombo=1;dmComboT=0;
   takeGun();inventory.bomb=(inventory.bomb||0)+3;
   phaseUnlocked.drone=true;setPhase('drone');
   if(padDrone){rideDrone=padDrone;boardDrone()}
   controls.getObject().position.y=8;
-  spawnRogueDrones(6);
+  spawnRogueDrones(6);updateScoreHud();
   showPhaseBanner('DRONE MODE — wave 1 · Click fire · G bomb · Space climb · WASD/wheel fly');
 }
 function checkDroneWave(){
   if(droneMode&&rogueDrones.length===0){
-    droneModeWave++;tokens+=20;inventory.bomb=(inventory.bomb||0)+1;ammo=AMMO_MAX;updateAmmoHud();
-    showPhaseBanner(`DRONE MODE — wave ${droneModeWave} (+20 tokens, +1 bomb, ammo refilled)`);
-    setTimeout(()=>spawnRogueDrones(4+droneModeWave*2),2500);updateUI();return;
+    const bonus=droneModeWave*250;dmScore+=bonus;if(dmScore>dmBest){dmBest=dmScore;localStorage.setItem('cbm_drone_best',dmBest)}
+    droneModeWave++;tokens+=20;inventory.bomb=(inventory.bomb||0)+1;ammo=AMMO_MAX;updateAmmoHud();dropWaveLoot();updateScoreHud();
+    showPhaseBanner(`DRONE MODE — wave ${droneModeWave} (+${bonus} wave bonus, +1 bomb, ammo refilled, loot dropped)`);
+    setTimeout(()=>{spawnRogueDrones(4+droneModeWave*2);if(droneModeWave%5===0)spawnBossDrone()},2500);updateUI();return;
   }
   if(rogueDrones.length===0 && gamePhase==='drone'){
     droneWaveCleared=true;
@@ -1323,6 +1357,7 @@ function faceByMotion(spr,dx,dz){
 // Corpses/explosions play their one-shot anim then get removed.
 const dyingSprites=[];
 function killSprite(spr,state){
+  scoreKill(spr);
   if(spr.userData.anim){setAnim(spr,state,true);spr.userData.dying=true;dyingSprites.push(spr)}
   else scene.remove(spr);
 }
@@ -1453,7 +1488,7 @@ function animate(){
   tickAmmoRegen(delta);
   tickBombs(delta);
   tickFFDrone(delta,time);
-  tickDying(delta);SFX.setHum(droneBoarded);SFX.tick();tickHitFlash(rawDelta);tickDmgNums(rawDelta);
+  tickDying(delta);tickCombo(delta);SFX.setHum(droneBoarded);SFX.tick();tickHitFlash(rawDelta);tickDmgNums(rawDelta);
   drawMinimap();
 
   if(isLocked&&!dialogueOpen&&!panelOpen){
