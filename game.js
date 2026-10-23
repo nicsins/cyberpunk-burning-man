@@ -1358,6 +1358,10 @@ function faceByMotion(spr,dx,dz){
 const dyingSprites=[];
 function killSprite(spr,state){
   scoreKill(spr);
+  if(!spr.userData.isRogue&&theMan&&flatDist(spr.position,theMan.position)>8){
+    tokens+=10;manIntegrity=Math.min(100,manIntegrity+2);
+    spawnDmgNum(spr.position.clone().add(new THREE.Vector3(0,2.4,0)),'INTERCEPT! +10','#ffd000');updateUI();
+  }
   if(spr.userData.anim){setAnim(spr,state,true);spr.userData.dying=true;dyingSprites.push(spr)}
   else scene.remove(spr);
 }
