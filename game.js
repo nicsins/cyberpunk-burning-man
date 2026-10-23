@@ -253,6 +253,9 @@ async function init(){
     const path = n.includes('.') ? assetUrl(n) : assetUrl(n+'.png');
     textures[n]=await loadTexture(path.replace(/\.png\.png$/,'.png').replace(/\.jpg\.png$/,'.jpg'));
   }
+  // Animated sprite sheets ship as data URIs in assets/sprite_sheets.js (missing -> tilt/squash fallback)
+  try{const {SPRITE_SHEETS}=await import('./assets/sprite_sheets.js');
+    for(const [k,uri] of Object.entries(SPRITE_SHEETS))textures[k]=await loadTexture(uri);}catch(e){console.warn('sprite sheets unavailable',e)}
   // fix extensions for jpg
   textures.item_creator=await loadTexture(assetUrl('item_creator.png').replace('item_creator.png','item_creator.png'));
   try{textures.item_creator=await loadTexture(useLocal?LOCAL+'item_creator.png':CDN+'item_creator.png');}catch(e){}
@@ -529,7 +532,7 @@ function damageInFront(range,dmg){
     if(dist<range && to.normalize().dot(dir)>0.45){
       d.userData.hp=(d.userData.hp||30)-dmg;
       if(d.userData.hp<=0){
-        scene.remove(d);rogueDrones.splice(i,1);
+        killSprite(d,'explode');rogueDrones.splice(i,1);
         tokens+=8;showToast('Rogue drone destroyed +8 tokens');
         checkDroneWave();
       }
@@ -541,7 +544,7 @@ function damageInFront(range,dmg){
     if(dist<range+1 && to.normalize().dot(dir)>0.35){
       e.userData.hp=(e.userData.hp||40)-dmg;
       if(e.userData.hp<=0){
-        scene.remove(e);enemyNpcs.splice(i,1);
+        killSprite(e,'death');enemyNpcs.splice(i,1);
         tokens+=15;showToast('Arsonist down +15 tokens');
         checkDefendWin();
       }
@@ -689,7 +692,7 @@ function takeGun(){
   if(gunPickup){scene.remove(gunPickup);gunPickup=null}
   showToast(`🔫 Plasma Rifle! Left-click to fire (${AMMO_MAX} rounds, +1 every ${AMMO_REGEN_SEC}s)`);
 }
-window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,startDroneMode,get droneMode(){return droneMode},get rogueDrones(){return rogueDrones},toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup};
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,startDroneMode,get droneMode(){return droneMode},get rogueDrones(){return rogueDrones},toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup,get enemyNpcs(){return enemyNpcs},spawnArsonists:n=>spawnArsonists(n),spawnRogueDrones:n=>spawnRogueDrones(n),setPhase:p=>setPhase(p),damageInFront:(r,d)=>damageInFront(r,d),get dying(){return dyingSprites}};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -823,7 +826,8 @@ function spawnRogueDrones(n){
     spr.scale.set(1.6,1.6,1);
     const a=Math.random()*Math.PI*2,r=25+Math.random()*40;
     spr.position.set(Math.cos(a)*r,4+Math.random()*6,Math.sin(a)*r);
-    spr.userData={isRogue:true,hp:30,phase:Math.random()*Math.PI*2,speed:0.015+Math.random()*0.02};
+    spr.userData={isRogue:true,hp:30,phase:Math.random()*Math.PI*2,speed:0.015+Math.random()*0.02,fireT:2+Math.random()*4};
+    if(attachSheet(spr,'drone','hover'))spr.scale.set(2,2,1);
     scene.add(spr);rogueDrones.push(spr);
   }
   showToast(`${n} rogue drones inbound!`);
@@ -856,12 +860,14 @@ function spawnArsonists(n){
   for(let i=0;i<n;i++){
     // reuse engineer/fox as hostile look
     const tex=textures.npc_engineer||textures.npc_fox;
-    const mat=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:0.12,depthWrite:false,color:0xff9a9a});   // hostile tint, softened so it reads as tint not glow
+    const mat=new THREE.SpriteMaterial({map:tex,transparent:true,alphaTest:0.12,depthWrite:false,color:0xff9a9a});
+    const sheeted=!!(textures['arsonist_sheet.webp']?.image?.width>64);   // hostile tint, softened so it reads as tint not glow
     const spr=new THREE.Sprite(mat);
     spr.scale.set(2,3,1);
     const a=Math.random()*Math.PI*2,r=40+Math.random()*30;
     spr.position.set(Math.cos(a)*r,1.5,Math.sin(a)*r);
     spr.userData={isEnemy:true,hp:45,fireTimer:3+Math.random()*4,phase:Math.random()*Math.PI*2};
+    if(sheeted&&attachSheet(spr,'arsonist','run')){spr.material.color.set(0xffffff);spr.scale.set(2.4,3.6,1)}
     scene.add(spr);enemyNpcs.push(spr);
   }
   showToast(`${n} arsonist agents spotted near The Man!`);
@@ -1150,8 +1156,8 @@ function explodeAt(p){
   const fx=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),new THREE.MeshBasicMaterial({color:0xff6600,transparent:true,opacity:0.7,blending:THREE.AdditiveBlending,depthWrite:false}));
   fx.position.copy(p);scene.add(fx);let k=0;const iv=setInterval(()=>{k++;fx.scale.setScalar(1+k*0.8);fx.material.opacity=0.7-k*0.07;if(k>=10){clearInterval(iv);scene.remove(fx)}},30);
   let hits=0;
-  for(let i=rogueDrones.length-1;i>=0;i--){const d=rogueDrones[i];if(d.position.distanceTo(p)<BOMB_RADIUS){d.userData.hp=(d.userData.hp||30)-BOMB_DMG;if(d.userData.hp<=0){scene.remove(d);rogueDrones.splice(i,1);tokens+=8;hits++}}}
-  for(let i=enemyNpcs.length-1;i>=0;i--){const e=enemyNpcs[i];if(e.position.distanceTo(p)<BOMB_RADIUS){e.userData.hp=(e.userData.hp||40)-BOMB_DMG;if(e.userData.hp<=0){scene.remove(e);enemyNpcs.splice(i,1);tokens+=15;hits++}}}
+  for(let i=rogueDrones.length-1;i>=0;i--){const d=rogueDrones[i];if(d.position.distanceTo(p)<BOMB_RADIUS){d.userData.hp=(d.userData.hp||30)-BOMB_DMG;if(d.userData.hp<=0){killSprite(d,'explode');rogueDrones.splice(i,1);tokens+=8;hits++}}}
+  for(let i=enemyNpcs.length-1;i>=0;i--){const e=enemyNpcs[i];if(e.position.distanceTo(p)<BOMB_RADIUS){e.userData.hp=(e.userData.hp||40)-BOMB_DMG;if(e.userData.hp<=0){killSprite(e,'death');enemyNpcs.splice(i,1);tokens+=15;hits++}}}
   showToast(hits?`💥 Boom! ${hits} down`:'💥 Boom!');
   if(gamePhase==='drone')checkDroneWave();if(gamePhase==='defend')checkDefendWin();updateUI();
 }
@@ -1272,6 +1278,59 @@ function drawMinimap(){
   g.fillStyle='#9cf';g.font='9px monospace';g.fillText(hasScanner?'SCAN ON':'no scanner',R-24,MM_SIZE-10);
 }
 
+
+// ---- Sprite-sheet animation state machine ----
+// Sheets are grids of equal cells; each anim = row, start col, frame count, fps, once?
+const SHEETS={
+  arsonist:{tex:'arsonist_sheet.webp',cols:4,rows:4,anims:{
+    walk:{row:0,n:4,fps:7},run:{row:1,n:4,fps:11},throw:{row:2,n:3,fps:7,once:true,next:'walk'},death:{row:3,n:3,fps:6,once:true}}},
+  drone:{tex:'rogue_drone_sheet.webp',cols:4,rows:2,anims:{
+    hover:{row:0,n:2,fps:8},fire:{row:0,start:2,n:2,fps:8,once:true,next:'hover'},explode:{row:1,n:4,fps:10,once:true}}}
+};
+function attachSheet(spr,key,state){
+  const sh=SHEETS[key],base=textures[sh.tex];
+  if(!base||!base.image||base.image.width<=64)return false; // missing -> keep tilt/squash fallback
+  const t=base.clone();t.needsUpdate=true;t.repeat.set(1/sh.cols,1/sh.rows);
+  spr.material.map=t;spr.material.needsUpdate=true;
+  spr.userData.anim={sheet:sh,state:null,t:0,frame:-1,done:false,face:1};
+  setAnim(spr,state);return true;
+}
+function setAnim(spr,state,force){
+  const a=spr.userData.anim;if(!a||!a.sheet.anims[state])return;
+  if(a.state===state&&!force)return;
+  a.state=state;a.t=0;a.frame=-1;a.done=false;
+}
+function tickAnim(spr,dt){
+  const a=spr.userData.anim;if(!a)return false;
+  const an=a.sheet.anims[a.state];a.t+=dt;
+  let f=Math.floor(a.t*an.fps);
+  if(an.once&&f>=an.n){f=an.n-1;if(!a.done){a.done=true;if(an.next)setAnim(spr,an.next)}}
+  else f%=an.n;
+  if(f!==a.frame){a.frame=f;const sh=a.sheet,col=(an.start||0)+f;
+    spr.material.map.offset.set(col/sh.cols,1-(an.row+1)/sh.rows);}
+  return true;
+}
+// Flip sheet (drawn facing right) by movement direction relative to camera's right vector.
+const _camR=new THREE.Vector3();
+function faceByMotion(spr,dx,dz){
+  const a=spr.userData.anim;if(!a||Math.abs(dx)+Math.abs(dz)<1e-4)return;
+  _camR.setFromMatrixColumn(camera.matrixWorld,0);
+  const s=(dx*_camR.x+dz*_camR.z)<0?-1:1;
+  if(s!==a.face){a.face=s;spr.scale.x=Math.abs(spr.scale.x)*s}
+}
+// Corpses/explosions play their one-shot anim then get removed.
+const dyingSprites=[];
+function killSprite(spr,state){
+  if(spr.userData.anim){setAnim(spr,state,true);spr.userData.dying=true;dyingSprites.push(spr)}
+  else scene.remove(spr);
+}
+function tickDying(dt){
+  for(let i=dyingSprites.length-1;i>=0;i--){const s=dyingSprites[i];tickAnim(s,dt);
+    if(s.userData.anim.done){s.userData.linger=(s.userData.linger||0)+dt;
+      if(s.userData.linger>(s.userData.isRogue?0.1:1.5)){s.material.opacity=Math.max(0,1-(s.userData.linger-1.5));}
+      if(s.userData.linger>(s.userData.isRogue?0.2:2.5)){scene.remove(s);s.material.map.dispose();dyingSprites.splice(i,1)}}}
+}
+
 function animateWalkCycle(spr,time,isDrone){
   const ud=spr.userData;
   if(!ud.baseScale)ud.baseScale=spr.scale.clone();
@@ -1294,6 +1353,7 @@ function animate(){
   tickAmmoRegen(delta);
   tickBombs(delta);
   tickFFDrone(delta,time);
+  tickDying(delta);
   drawMinimap();
 
   if(isLocked&&!dialogueOpen&&!panelOpen){
@@ -1344,12 +1404,13 @@ function animate(){
 
   // Rogue drones orbit / chase
   rogueDrones.forEach(d=>{
-    d.position.y=4+Math.sin(time*2+d.userData.phase)*1.5;
-    animateWalkCycle(d,time,true);
+    d.position.y=(d.userData.baseY||4)+Math.sin(time*2+d.userData.phase)*1.5;
+    if(!tickAnim(d,delta))animateWalkCycle(d,time,true);
     const toPlayer=player.position.clone().sub(d.position);
+    if(d.userData.anim&&toPlayer.length()<25){d.userData.fireT-=delta;if(d.userData.fireT<=0){d.userData.fireT=2.5+Math.random()*3;setAnim(d,'fire',true)}}
     if(toPlayer.length()>3){
       toPlayer.normalize().multiplyScalar(d.userData.speed*60*delta);
-      d.position.x+=toPlayer.x;d.position.z+=toPlayer.z;
+      d.position.x+=toPlayer.x;d.position.z+=toPlayer.z;faceByMotion(d,toPlayer.x,toPlayer.z);
     }
   });
 
@@ -1384,15 +1445,18 @@ function animate(){
     }
     enemyNpcs.forEach(e=>{
       e.position.y=1.5+Math.sin(time*2+e.userData.phase)*0.08;
-      animateWalkCycle(e,time,false);
+      if(!tickAnim(e,delta))animateWalkCycle(e,time,false);
       const toMan=theMan.position.clone().sub(e.position);toMan.y=0;
       if(toMan.length()>8){
-        toMan.normalize().multiplyScalar(4*delta);
-        e.position.x+=toMan.x;e.position.z+=toMan.z;
+        setAnim(e,'run');
+        toMan.normalize().multiplyScalar(5.5*delta);
+        e.position.x+=toMan.x;e.position.z+=toMan.z;faceByMotion(e,toMan.x,toMan.z);
       }else{
+        if(e.userData.anim&&e.userData.anim.state==='run')setAnim(e,'walk');
         e.userData.fireTimer-=delta;
         if(e.userData.fireTimer<=0){
           e.userData.fireTimer=5+Math.random()*4;
+          setAnim(e,'throw',true);
           spawnFireNearMan();
         }
       }
