@@ -392,6 +392,7 @@ function onKeyDown(e){
       else if(canJump){velocity.y+=7.8;canJump=false}
       break;
     case 'KeyC':case 'ControlLeft':case 'ControlRight':case 'KeyQ':if(isFlying){flyDown=true;e.preventDefault()}break;
+    case 'KeyK':if(tut&&document.getElementById('tut-skip').style.display!=='none')endTutorial(true);break;
     case 'KeyE':interact();break;
     case 'KeyF':toggleFlight();break;
     case 'KeyR':useSpecialAbility();break;
@@ -577,7 +578,7 @@ function deploySuppressDrone(){
 function boardDrone(){
   droneBoarded=true;droneEverBoarded=true;isFlying=true;
   flyHeight=Math.max(controls.getObject().position.y,4);
-  updateHullHud();showToast('🛸 Drone boarded — Space up · C/Ctrl/Q down · WASD/wheel move · F or E to land');
+  updateHullHud();if(!localStorage.getItem('cbm_drone_tut')&&!tut)startTutorial();showToast('🛸 Drone boarded — Space up · C/Ctrl/Q down · WASD/wheel move · F or E to land');
 }
 function exitDrone(crash){
   droneBoarded=false;flyUp=flyDown=false;setTimeout(updateHullHud,0);isFlying=false;controls.getObject().position.y=1.7;
@@ -881,10 +882,11 @@ function startDroneMode(){
   phaseUnlocked.drone=true;setPhase('drone');
   if(padDrone){rideDrone=padDrone;boardDrone()}
   controls.getObject().position.y=8;
-  spawnRogueDrones(6);updateScoreHud();
+  if(tut)tut.onDone=()=>{spawnRogueDrones(6);updateScoreHud()};else spawnRogueDrones(6);updateScoreHud();
   showPhaseBanner('DRONE MODE — wave 1 · Click fire · G bomb · Space up · C/Ctrl/Q down · WASD/wheel fly');
 }
 function checkDroneWave(){
+  if(tut)return; // training drone kill must not trigger waves
   if(droneMode&&rogueDrones.length===0){
     const bonus=droneModeWave*250;dmScore+=bonus;if(dmScore>dmBest){dmBest=dmScore;localStorage.setItem('cbm_drone_best',dmBest)}
     droneModeWave++;tokens+=20;inventory.bomb=(inventory.bomb||0)+1;ammo=AMMO_MAX;updateAmmoHud();dropWaveLoot();updateScoreHud();
@@ -1404,7 +1406,47 @@ function tickDmgNums(dt){
     d.el.style.display='block';d.el.style.left=((v.x+1)/2*innerWidth)+'px';d.el.style.top=((1-v.y)/2*innerHeight)+'px';d.el.style.opacity=String(1-d.t/0.9);
   }
 }
-window.__cbm2={get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
+// ---- First drone run tutorial (completion in localStorage 'cbm_drone_tut'; Skip after basics, always on later runs via 'cbm_drone_tut_seen') ----
+let tut=null;
+const TUT_STEPS=[
+  {t:'⬆ Hold SPACE to climb',k:'up'},{t:'⬇ Hold C / Ctrl / Q to descend',k:'down'},
+  {t:'⬅ Strafe LEFT (A)',k:'left'},{t:'➡ Strafe RIGHT (D)',k:'right'},
+  {t:'⏫ Fly FORWARD (W or wheel up)',k:'fwd'},{t:'⏬ Fly BACK (S or wheel down)',k:'back'},
+  {t:'↗ Go DIAGONAL (W+A or W+D together)',k:'diag'},
+  {t:'🎯 SHOOT the training drone (click — it\'s marked on the minimap)',k:'hit'},{t:'💥 DESTROY it',k:'kill'}];
+const TUT_BASICS=7;
+function startTutorial(){
+  tut={i:0,acc:0,y0:controls.getObject().position.y,target:null,onDone:null};
+  if(!hasGun)takeGun();
+  let el=document.getElementById('tut-box');
+  if(!el){el=document.createElement('div');el.id='tut-box';el.style.cssText='position:fixed;top:22%;left:50%;transform:translateX(-50%);background:rgba(0,10,20,.85);border:2px solid #0ff;border-radius:12px;padding:12px 20px;color:#fff;font:600 1rem monospace;z-index:60;text-align:center;box-shadow:0 0 18px #0ff8';
+    el.innerHTML='<div style="font-size:.65rem;color:#0ff;letter-spacing:2px">DRONE FLIGHT SCHOOL</div><div id="tut-step" style="margin:6px 0"></div><div id="tut-prog" style="font-size:.7rem;color:#8af"></div><button id="tut-skip" style="display:none;margin-top:8px;background:#f0f;border:0;border-radius:20px;padding:5px 16px;font-weight:bold;cursor:pointer">SKIP (K)</button>';
+    document.body.appendChild(el);el.querySelector('#tut-skip').onclick=()=>endTutorial(true)}
+  el.style.display='block';renderTut();
+}
+function renderTut(){
+  if(!tut)return;document.getElementById('tut-step').textContent=TUT_STEPS[tut.i].t;
+  document.getElementById('tut-prog').textContent=`step ${tut.i+1}/${TUT_STEPS.length}`;
+  document.getElementById('tut-skip').style.display=(tut.i>=TUT_BASICS||localStorage.getItem('cbm_drone_tut_seen'))?'inline-block':'none';
+}
+function tutAdvance(){tut.i++;tut.acc=0;tut.y0=controls.getObject().position.y;SFX.chime();
+  if(tut.i===7&&!tut.target){spawnRogueDrones(1);tut.target=rogueDrones[rogueDrones.length-1];Object.assign(tut.target.userData,{tut:true,hp:40,speed:0,fireT:1e9});const p=controls.getObject().position,d=new THREE.Vector3();camera.getWorldDirection(d);d.y=0;d.normalize();tut.target.position.set(p.x+d.x*7,p.y,p.z+d.z*7);tut.target.userData.baseY=p.y}
+  if(tut.i>=TUT_STEPS.length){endTutorial(false);return}renderTut()}
+function endTutorial(skipped){
+  if(!tut)return;localStorage.setItem('cbm_drone_tut_seen','1');if(!skipped)localStorage.setItem('cbm_drone_tut','1');
+  if(tut.target&&rogueDrones.includes(tut.target)){scene.remove(tut.target);rogueDrones.splice(rogueDrones.indexOf(tut.target),1)}
+  const cb=tut.onDone;tut=null;document.getElementById('tut-box').style.display='none';
+  showToast(skipped?'Tutorial skipped — it stays skippable next time':'✅ Flight school complete! You\'re cleared for combat.');cb&&cb();
+}
+function tickTutorial(dt){
+  if(!tut||!droneBoarded)return;const k=TUT_STEPS[tut.i].k,y=controls.getObject().position.y;
+  const held={left:moveLeft&&!moveRight,right:moveRight&&!moveLeft,fwd:moveForward||velocity.z<-6,back:moveBackward||velocity.z>6,diag:(moveForward||moveBackward)&&(moveLeft||moveRight)}[k];
+  if(k==='up'&&y>tut.y0+3)tutAdvance();else if(k==='down'&&y<tut.y0-2.5)tutAdvance();
+  else if(held!==undefined){if(held){tut.acc+=dt;if(tut.acc>0.6)tutAdvance()}}
+  else if(k==='hit'&&tut.target&&tut.target.userData.hp<40)tutAdvance();
+  else if(k==='kill'&&tut.target&&!rogueDrones.includes(tut.target)){tut.target=null;tutAdvance()}
+}
+window.__cbm2={get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
 function onHit(e,dmg,from,kb=0.8){
   const ud=e.userData;
   if(!ud.baseColor)ud.baseColor=e.material.color.clone();
@@ -1499,7 +1541,7 @@ function animate(){
   if(attackCooldown>0)attackCooldown-=delta;
   tickAmmoRegen(delta);
   tickBombs(delta);
-  tickFFDrone(delta,time);
+  tickFFDrone(delta,time);tickTutorial(delta);
   tickDying(delta);tickCombo(delta);SFX.setHum(droneBoarded);SFX.tick();tickHitFlash(rawDelta);tickDmgNums(rawDelta);
   drawMinimap();
 
