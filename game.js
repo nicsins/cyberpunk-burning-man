@@ -530,7 +530,7 @@ function damageInFront(range,dmg){
     const d=rogueDrones[i];
     const to=d.position.clone().sub(pos);const dist=to.length();
     if(dist<range && to.normalize().dot(dir)>0.45){
-      d.userData.hp=(d.userData.hp||30)-dmg;
+      d.userData.hp=(d.userData.hp||30)-dmg;onHit(d,dmg,pos);
       if(d.userData.hp<=0){
         killSprite(d,'explode');rogueDrones.splice(i,1);
         tokens+=8;showToast('Rogue drone destroyed +8 tokens');
@@ -542,7 +542,7 @@ function damageInFront(range,dmg){
     const e=enemyNpcs[i];
     const to=e.position.clone().sub(pos);const dist=to.length();
     if(dist<range+1 && to.normalize().dot(dir)>0.35){
-      e.userData.hp=(e.userData.hp||40)-dmg;
+      e.userData.hp=(e.userData.hp||40)-dmg;onHit(e,dmg,pos);
       if(e.userData.hp<=0){
         killSprite(e,'death');enemyNpcs.splice(i,1);
         tokens+=15;showToast('Arsonist down +15 tokens');
@@ -692,7 +692,7 @@ function takeGun(){
   if(gunPickup){scene.remove(gunPickup);gunPickup=null}
   showToast(`🔫 Plasma Rifle! Left-click to fire (${AMMO_MAX} rounds, +1 every ${AMMO_REGEN_SEC}s)`);
 }
-window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,startDroneMode,get droneMode(){return droneMode},get rogueDrones(){return rogueDrones},toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup,get enemyNpcs(){return enemyNpcs},spawnArsonists:n=>spawnArsonists(n),spawnRogueDrones:n=>spawnRogueDrones(n),setPhase:p=>setPhase(p),damageInFront:(r,d)=>damageInFront(r,d),get dying(){return dyingSprites}};
+window.__cbm={get collectibles(){return collectibles},get inventory(){return inventory},get player(){return player},get controls(){return controls},get hasGun(){return hasGun},get droneBoarded(){return droneBoarded},get isFlying(){return isFlying},get rideDrone(){return rideDrone},interact,startDroneMode,get droneMode(){return droneMode},get rogueDrones(){return rogueDrones},toggleRideFF,get ffDrone(){return ffDrone},throwBomb,sprayFoam,forge,get ammoPickups(){return ammoPickups},get bombPickups(){return bombPickups},get fires(){return fires},get tokens(){return tokens},set tokens(v){tokens=v},spawnFireNearMan:()=>spawnFireNearMan(),get hasScanner(){return hasScanner},get extCharges(){return extCharges},resolveCollisions,get theMan(){return theMan},get ammo(){return ammo},autoPickup,get enemyNpcs(){return enemyNpcs},spawnArsonists:n=>spawnArsonists(n),spawnRogueDrones:n=>spawnRogueDrones(n),setPhase:p=>setPhase(p),damageInFront:(r,d)=>damageInFront(r,d),get dying(){return dyingSprites},get hitstop(){return hitstop},get shakeAmt(){return shakeAmt},explodeAt:p=>explodeAt(p)};
 
 function tryCompleteQuest(npc){
   const q=npc.userData.quest;
@@ -1155,9 +1155,9 @@ function throwBomb(){
 function explodeAt(p){
   const fx=new THREE.Mesh(new THREE.SphereGeometry(1,16,12),new THREE.MeshBasicMaterial({color:0xff6600,transparent:true,opacity:0.7,blending:THREE.AdditiveBlending,depthWrite:false}));
   fx.position.copy(p);scene.add(fx);let k=0;const iv=setInterval(()=>{k++;fx.scale.setScalar(1+k*0.8);fx.material.opacity=0.7-k*0.07;if(k>=10){clearInterval(iv);scene.remove(fx)}},30);
-  let hits=0;
-  for(let i=rogueDrones.length-1;i>=0;i--){const d=rogueDrones[i];if(d.position.distanceTo(p)<BOMB_RADIUS){d.userData.hp=(d.userData.hp||30)-BOMB_DMG;if(d.userData.hp<=0){killSprite(d,'explode');rogueDrones.splice(i,1);tokens+=8;hits++}}}
-  for(let i=enemyNpcs.length-1;i>=0;i--){const e=enemyNpcs[i];if(e.position.distanceTo(p)<BOMB_RADIUS){e.userData.hp=(e.userData.hp||40)-BOMB_DMG;if(e.userData.hp<=0){killSprite(e,'death');enemyNpcs.splice(i,1);tokens+=15;hits++}}}
+  let hits=0;shake(Math.max(0.08,0.5-camera.position.distanceTo(p)*0.012));
+  for(let i=rogueDrones.length-1;i>=0;i--){const d=rogueDrones[i];if(d.position.distanceTo(p)<BOMB_RADIUS){d.userData.hp=(d.userData.hp||30)-BOMB_DMG;onHit(d,BOMB_DMG,p,2.5);if(d.userData.hp<=0){killSprite(d,'explode');rogueDrones.splice(i,1);tokens+=8;hits++}}}
+  for(let i=enemyNpcs.length-1;i>=0;i--){const e=enemyNpcs[i];if(e.position.distanceTo(p)<BOMB_RADIUS){e.userData.hp=(e.userData.hp||40)-BOMB_DMG;onHit(e,BOMB_DMG,p,2.5);if(e.userData.hp<=0){killSprite(e,'death');enemyNpcs.splice(i,1);tokens+=15;hits++}}}
   showToast(hits?`💥 Boom! ${hits} down`:'💥 Boom!');
   if(gamePhase==='drone')checkDroneWave();if(gamePhase==='defend')checkDefendWin();updateUI();
 }
@@ -1331,6 +1331,47 @@ function tickDying(dt){
       if(s.userData.linger>(s.userData.isRogue?0.2:2.5)){scene.remove(s);s.material.map.dispose();dyingSprites.splice(i,1)}}}
 }
 
+
+// ---- Hit feedback: hitmarker, damage numbers, flash, knockback, shake, hitstop ----
+let hitstop=0,shakeAmt=0;const dmgNums=[];
+function ensureHitmarker(){
+  let h=document.getElementById('hitmarker');if(h)return h;
+  h=document.createElement('div');h.id='hitmarker';
+  h.style.cssText='position:fixed;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;pointer-events:none;z-index:30;opacity:0;transition:opacity .12s';
+  h.innerHTML='<svg viewBox="0 0 26 26" width="26" height="26" stroke="#fff" stroke-width="2.5" stroke-linecap="round"><path d="M3 3l6 6M23 3l-6 6M3 23l6-6M23 23l-6-6"/></svg>';
+  document.body.appendChild(h);return h;
+}
+function flashHitmarker(kill){const h=ensureHitmarker();h.querySelector('svg').setAttribute('stroke',kill?'#ff3355':'#fff');h.style.transition='none';h.style.opacity=1;h.style.transform=kill?'scale(1.4)':'scale(1)';requestAnimationFrame(()=>{h.style.transition='opacity .25s';h.style.opacity=0})}
+function spawnDmgNum(pos,txt,col){
+  const el=document.createElement('div');el.textContent=txt;
+  el.style.cssText=`position:fixed;pointer-events:none;z-index:29;font:bold 18px monospace;color:${col};text-shadow:0 0 6px #000,0 0 10px ${col}`;
+  document.body.appendChild(el);dmgNums.push({el,p:pos.clone().add(new THREE.Vector3((Math.random()-.5)*.6,1.6,0)),t:0});
+}
+function tickDmgNums(dt){
+  const v=new THREE.Vector3();
+  for(let i=dmgNums.length-1;i>=0;i--){const d=dmgNums[i];d.t+=dt;d.p.y+=dt*1.5;
+    if(d.t>0.9){d.el.remove();dmgNums.splice(i,1);continue}
+    v.copy(d.p).project(camera);
+    if(v.z>1){d.el.style.display='none';continue}
+    d.el.style.display='block';d.el.style.left=((v.x+1)/2*innerWidth)+'px';d.el.style.top=((1-v.y)/2*innerHeight)+'px';d.el.style.opacity=String(1-d.t/0.9);
+  }
+}
+function onHit(e,dmg,from,kb=0.8){
+  const ud=e.userData;
+  if(!ud.baseColor)ud.baseColor=e.material.color.clone();
+  ud.flash=0.12;e.material.color.setRGB(4,4,4);
+  const away=e.position.clone().sub(from);away.y=0;if(away.lengthSq()>1e-6){away.normalize().multiplyScalar(kb);e.position.x+=away.x;e.position.z+=away.z}
+  const kill=ud.hp<=0;
+  spawnDmgNum(e.position,String(Math.round(dmg)),kill?'#ff3355':'#ffee66');
+  flashHitmarker(kill);
+  if(kill)hitstop=Math.max(hitstop,0.08);
+}
+function tickHitFlash(dt){
+  const all=rogueDrones.concat(enemyNpcs,dyingSprites);
+  for(const e of all){const ud=e.userData;if(ud.flash>0){ud.flash-=dt;if(ud.flash<=0)e.material.color.copy(ud.baseColor)}}
+}
+function shake(a){shakeAmt=Math.max(shakeAmt,a)}
+
 function animateWalkCycle(spr,time,isDrone){
   const ud=spr.userData;
   if(!ud.baseScale)ud.baseScale=spr.scale.clone();
@@ -1347,13 +1388,14 @@ function animateWalkCycle(spr,time,isDrone){
 
 function animate(){
   requestAnimationFrame(animate);
-  const delta=Math.min(clock.getDelta(),0.05),time=clock.getElapsedTime();
+  let delta=Math.min(clock.getDelta(),0.05);const time=clock.getElapsedTime();
+  const rawDelta=delta;if(hitstop>0){hitstop-=delta;delta*=0.05}
   if(frostCooldown>0)frostCooldown-=delta;
   if(attackCooldown>0)attackCooldown-=delta;
   tickAmmoRegen(delta);
   tickBombs(delta);
   tickFFDrone(delta,time);
-  tickDying(delta);
+  tickDying(delta);tickHitFlash(rawDelta);tickDmgNums(rawDelta);
   drawMinimap();
 
   if(isLocked&&!dialogueOpen&&!panelOpen){
@@ -1477,7 +1519,9 @@ function animate(){
   if(generators.length)document.getElementById('status').textContent=`ZPEGs:${generators.length} | Phase:${gamePhase}`;
   updateObjectiveMarker();
   updateDangerIndicator(time);
+  let _sh=null;if(shakeAmt>0.002){_sh=new THREE.Vector3((Math.random()-.5),(Math.random()-.5),(Math.random()-.5)).multiplyScalar(shakeAmt);camera.position.add(_sh);shakeAmt*=Math.pow(0.002,rawDelta)}else shakeAmt=0;
   composer.render(delta);
+  if(_sh)camera.position.sub(_sh);
 }
 
 document.querySelectorAll('.char-card').forEach(card=>{
