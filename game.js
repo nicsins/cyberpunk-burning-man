@@ -398,6 +398,7 @@ function onKeyDown(e){
     case 'KeyV':if(targeting&&!fireRocket())showToast('No lock yet — hold the target in the reticle');break;
     case 'KeyB':if(gameStarted)smokeScreen();break;
     case 'KeyZ':if(gameStarted)chainSweep();break;
+    case 'KeyJ':if(quad){quadGuard=!quadGuard;showToast(quadGuard?'🐕 Quad Drone guarding The Man':'🐕 Quad Drone following you')}else hint('noquad','🐕 Forge a Quad Minigun Drone in Ω Panel (I) → Forge');break;
     case 'KeyE':interact();break;
     case 'KeyF':toggleFlight();break;
     case 'KeyR':useSpecialAbility();break;
@@ -1574,7 +1575,32 @@ function tickPanda(dt,time){
     if(enemyNpcs.some(e=>flatDist(e.position,player.position)<8))chainSweep(true);
   }else if(boostFx){scene.remove(boostFx);boostFx=null;if(playerMesh)playerMesh.material.color.set(0xffffff);showToast('🎋 Bamboo Boost wore off')}
 }
-window.__cbm2={get boostT(){return boostT},get wafers(){return wafers},chainSweep,get wing(){return wing},smokeScreen,get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
+// ---- Quadruped ground drone (FF Drone template): ground height, minigun instead of foam, J toggles follow/guard The Man ----
+let quad=null,quadCool=0,quadGuard=false;
+function makeQuad(){
+  const g=new THREE.Group(),m=new THREE.MeshStandardMaterial({color:0x111a22,emissive:0x00aaff,emissiveIntensity:0.8,metalness:0.8,roughness:0.3});
+  const hull=new THREE.Mesh(new THREE.BoxGeometry(1.2,0.4,1.6),m);hull.position.y=0.9;g.add(hull);
+  const gun=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,1.1,8),new THREE.MeshBasicMaterial({color:0xffcc33}));gun.rotation.x=Math.PI/2;gun.position.set(0,1.25,0.6);g.add(gun);
+  const legs=[];for(let k=0;k<4;k++){const l=new THREE.Mesh(new THREE.BoxGeometry(0.15,0.9,0.15),m);l.position.set(k%2?0.55:-0.55,0.45,k<2?0.6:-0.6);g.add(l);legs.push(l)}
+  g.userData={legs,gun};g.position.set(player.position.x+2,0,player.position.z-2);scene.add(g);return g;
+}
+function tickQuad(delta,time){
+  if(!quad)return;quadCool-=delta;
+  let best=null,bd=18;for(const t of enemyNpcs.concat(rogueDrones)){if(t.userData.tut)continue;const d=t.position.distanceTo(quad.position);if(d<bd){bd=d;best=t}}
+  const home=quadGuard&&theMan?theMan.position:player.position;
+  const tgt=new THREE.Vector3(home.x-2.5,0,home.z+2);
+  const dx=tgt.x-quad.position.x,dz=tgt.z-quad.position.z,d=Math.hypot(dx,dz),moving=d>0.8;
+  if(moving){const sp=Math.min(d,10*delta);quad.position.x+=dx/d*sp;quad.position.z+=dz/d*sp}
+  quad.userData.legs.forEach((l,k)=>l.rotation.x=moving?Math.sin(time*12+(k%3?Math.PI:0))*0.5:0);
+  quad.rotation.y=best?Math.atan2(best.position.x-quad.position.x,best.position.z-quad.position.z):Math.atan2(dx,dz);
+  if(best&&quadCool<=0){quadCool=0.15;
+    const a=quad.position.clone().add(new THREE.Vector3(0,1.25,0)),ln=new THREE.Line(new THREE.BufferGeometry().setFromPoints([a,best.position.clone()]),new THREE.LineBasicMaterial({color:0xffdd55}));scene.add(ln);setTimeout(()=>scene.remove(ln),50);
+    best.userData.hp-=6;onHit(best,6,a,0.2);if(Math.random()<0.3)SFX.hit(false);
+    if(best.userData.hp<=0){const isR=rogueDrones.includes(best);killSprite(best,isR?'explode':'death');(isR?rogueDrones:enemyNpcs).splice((isR?rogueDrones:enemyNpcs).indexOf(best),1);tokens+=isR?8:15;isR?checkDroneWave():checkDefendWin();updateUI()}}
+}
+FORGE.push({id:'quad-drone',label:'🐕 Quad Minigun Drone',desc:'Four-legged ground sidekick with a minigun; follows you, J = guard The Man. Cost: Weapon Shard + Circuit Board or 90 tokens',items:{'weapon-shard':1,'circuit-board':1},tokens:90,
+  onForge(){if(quad){showToast('You already have a Quad Drone');return}quad=makeQuad();inventory['quad-drone']=1;showToast('🐕 Quad Minigun Drone online — it follows and shoots. J toggles guard The Man.')}});
+window.__cbm2={get quad(){return quad},get boostT(){return boostT},get wafers(){return wafers},chainSweep,get wing(){return wing},smokeScreen,get rockets(){return rockets},get lockP(){return lockP},get targeting(){return targeting},toggleTargeting,toggleAutoFire,fireRocket,get tut(){return tut},startTutorial,endTutorial,get alt(){return controls.getObject().position.y},get hull(){return droneHull},damageHull:n=>damageHull(n)};
 function onHit(e,dmg,from,kb=0.8){
   const ud=e.userData;
   if(!ud.baseColor)ud.baseColor=e.material.color.clone();
@@ -1671,7 +1697,7 @@ function animate(){
   if(attackCooldown>0)attackCooldown-=delta;
   tickAmmoRegen(delta);
   tickBombs(delta);
-  tickFFDrone(delta,time);tickTutorial(delta);tickRockets(delta);tickWingman(delta,time);tickPanda(delta,time);
+  tickFFDrone(delta,time);tickTutorial(delta);tickRockets(delta);tickWingman(delta,time);tickPanda(delta,time);tickQuad(delta,time);
   tickDying(delta);tickCombo(delta);SFX.setHum(droneBoarded);SFX.tick();tickHitFlash(rawDelta);tickDmgNums(rawDelta);
   drawMinimap();
 
