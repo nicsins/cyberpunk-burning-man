@@ -388,15 +388,21 @@ function createPlayerMesh(type){
 
 function onKeyDown(e){
   switch(e.code){
-    case 'KeyW':case 'ArrowUp':moveForward=true;break;
-    case 'KeyS':case 'ArrowDown':moveBackward=true;break;
+    case 'KeyW':moveForward=true;break;
+    case 'KeyS':moveBackward=true;break;
+    case 'ArrowUp':
+      if(e.ctrlKey&&isFlying){flyUp=true;arrowClimb=true;e.preventDefault()}else moveForward=true;
+      break;
+    case 'ArrowDown':
+      if(e.ctrlKey&&isFlying){flyDown=true;e.preventDefault()}else moveBackward=true;
+      break;
     case 'KeyA':case 'ArrowLeft':moveLeft=true;break;
     case 'KeyD':case 'ArrowRight':moveRight=true;break;
     case 'Space':
+      spaceHeld=true;
       if(isFlying){flyUp=true;e.preventDefault()}
       else if(canJump){velocity.y+=7.8;canJump=false}
       break;
-    case 'KeyC':case 'ControlLeft':case 'ControlRight':case 'KeyQ':if(isFlying){flyDown=true;e.preventDefault()}break;
     case 'KeyK':if(tut&&document.getElementById('tut-skip').style.display!=='none')endTutorial(true);break;
     case 'KeyT':if(gameStarted)toggleTargeting();break;
     case 'KeyY':if(gameStarted)toggleAutoFire();break;
@@ -419,16 +425,22 @@ function onKeyDown(e){
 }
 function onKeyUp(e){
   switch(e.code){
-    case 'KeyW':case 'ArrowUp':moveForward=false;break;
-    case 'KeyS':case 'ArrowDown':moveBackward=false;break;
+    case 'KeyW':moveForward=false;break;
+    case 'KeyS':moveBackward=false;break;
+    case 'ArrowUp':moveForward=false;arrowClimb=false;if(!spaceHeld)flyUp=false;break;
+    case 'ArrowDown':moveBackward=false;flyDown=false;break;
     case 'KeyA':case 'ArrowLeft':moveLeft=false;break;
     case 'KeyD':case 'ArrowRight':moveRight=false;break;
-    case 'Space':flyUp=false;break;
-    case 'KeyC':case 'ControlLeft':case 'ControlRight':case 'KeyQ':flyDown=false;break;
+    case 'Space':spaceHeld=false;if(!arrowClimb)flyUp=false;break;
+    case 'ControlLeft':case 'ControlRight':
+      // Ctrl released: stop Ctrl+arrow altitude even if arrow still held
+      if(arrowClimb){arrowClimb=false;if(!spaceHeld)flyUp=false}
+      flyDown=false;
+      break;
   }
 }
-// Vertical axis while flying: Space up, C/Ctrl/Q down. Clamped to ALT_MIN..ALT_MAX.
-const ALT_MIN=2,ALT_MAX=40,HULL_MAX=100;let flyUp=false,flyDown=false,droneHull=HULL_MAX;
+// Vertical axis while flying: Space or Ctrl+↑ climb, Ctrl+↓ descend (no letter keys — they steal shortcuts). Clamped to ALT_MIN..ALT_MAX.
+const ALT_MIN=2,ALT_MAX=40,HULL_MAX=100;let flyUp=false,flyDown=false,spaceHeld=false,arrowClimb=false,droneHull=HULL_MAX;
 function updateHullHud(){const el=ensureHudBox('hull','HULL','#66ffcc');el.textContent=droneBoarded?Math.max(0,Math.round(droneHull))+'%':'—'}
 function damageHull(n){if(!droneBoarded||smokeT>0)return;if(selectedChar==='panda')n*=0.6;droneHull-=n;shake(0.15);updateHullHud();if(droneHull<=0){droneHull=HULL_MAX;exitDrone(true);showPhaseBanner('💥 SHOT DOWN — drone crashed. You\'re on foot now: E on the drone to re-board (hull repaired)');SFX.boom()}}
 let middleHeld=false,savedPointerSpeed=1;
@@ -489,7 +501,7 @@ function toggleFlight(){
   }
   isFlying=!isFlying;
   if(isFlying){
-    showToast('🐉 Flight engaged — Space up · C/Ctrl/Q down · WASD strafe · R frost');
+    showToast('🐉 Flight engaged — Space/Ctrl+↑ up · Ctrl+↓ down · WASD strafe · R frost');
     flyHeight=Math.max(controls.getObject().position.y,4);
   }else{
     showToast('Landed');
@@ -590,10 +602,10 @@ function deploySuppressDrone(){
 function boardDrone(){
   droneBoarded=true;droneEverBoarded=true;isFlying=true;
   flyHeight=Math.max(controls.getObject().position.y,4);
-  updateHullHud();if(!localStorage.getItem('cbm_drone_tut')&&!tut)startTutorial();showToast('🛸 Drone boarded — Space up · C/Ctrl/Q down · WASD/wheel move · F or E to land');
+  updateHullHud();if(!localStorage.getItem('cbm_drone_tut')&&!tut)startTutorial();showToast('🛸 Drone boarded — Space/Ctrl+↑ up · Ctrl+↓ down · WASD/wheel move · F or E to land');
 }
 function exitDrone(crash){
-  droneBoarded=false;flyUp=flyDown=false;setTimeout(updateHullHud,0);isFlying=false;controls.getObject().position.y=1.7;
+  droneBoarded=false;flyUp=flyDown=spaceHeld=arrowClimb=false;setTimeout(updateHullHud,0);isFlying=false;controls.getObject().position.y=1.7;
   if(rideDrone)rideDrone.position.set(player.position.x+2,0.9,player.position.z);
   if(rideDrone===ffDrone)rideDrone=padDrone;
   if(!crash)showToast('Landed — drone parked next to you. E to board again.');
@@ -895,7 +907,7 @@ function startDroneMode(){
   controls.getObject().position.y=8;
   if(padDrone){rideDrone=padDrone;boardDrone()}
   if(tut)tut.onDone=()=>{spawnRogueDrones(6);updateScoreHud()};else spawnRogueDrones(6);updateScoreHud();
-  showPhaseBanner('DRONE MODE — wave 1 · Click fire · G bomb · Space up · C/Ctrl/Q down · WASD/wheel fly');
+  showPhaseBanner('DRONE MODE — wave 1 · Click fire · G bomb · Space/Ctrl+↑ up · Ctrl+↓ down · WASD/wheel fly');
 }
 function checkDroneWave(){
   if(tut)return; // training drone kill must not trigger waves
@@ -1421,7 +1433,7 @@ function tickDmgNums(dt){
 // ---- First drone run tutorial (completion in localStorage 'cbm_drone_tut'; Skip after basics, always on later runs via 'cbm_drone_tut_seen') ----
 let tut=null;
 const TUT_STEPS=[
-  {t:'⬆ Hold SPACE to climb',k:'up'},{t:'⬇ Hold C / Ctrl / Q to descend',k:'down'},
+  {t:'⬆ Hold SPACE or Ctrl+↑ to climb',k:'up'},{t:'⬇ Hold Ctrl+↓ to descend',k:'down'},
   {t:'⬅ Strafe LEFT (A)',k:'left'},{t:'➡ Strafe RIGHT (D)',k:'right'},
   {t:'⏫ Fly FORWARD (W or wheel up)',k:'fwd'},{t:'⏬ Fly BACK (S or wheel down)',k:'back'},
   {t:'↗ Go DIAGONAL (W+A or W+D together)',k:'diag'},
