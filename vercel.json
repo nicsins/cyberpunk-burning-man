@@ -1,32 +1,5 @@
 {
   "rewrites": [
-    {
-      "source": "/((?!.*\\.).*)",
-      "destination": "/index.html"
-    }
-  ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "Content-Security-Policy",
-          "value": "frame-ancestors 'self' https://nicsins.com https://*.nicsins.com"
-        }
-      ]
-    },
-    {
-      "source": "/(api|pay|checkout|wallet|login|auth|admin)(.*)",
-      "headers": [
-        {
-          "key": "X-Frame-Options",
-          "value": "DENY"
-        },
-        {
-          "key": "Content-Security-Policy",
-          "value": "frame-ancestors 'none'"
-        }
-      ]
-    }
+    { "source": "/((?!.*\\.).*)", "destination": "/index.html" }
   ]
 }
